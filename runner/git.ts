@@ -75,13 +75,13 @@ export async function createWorktree(
   }
   const add = await exec("git", ["worktree", "add", "-b", branch, worktree, base], { cwd: repo });
   if (add.code !== 0) {
-    throw new Error(`git worktree add failed: ${add.stderr ?? add.stdout}`.trim());
+    throw new Error(`git worktree add failed: ${add.stderr || add.stdout}`.trim());
   }
   return { branch, worktree };
 }
 
 export async function headSha(exec: Exec, worktree: string): Promise<string> {
   const r = await exec("git", ["rev-parse", "HEAD"], { cwd: worktree });
-  if (r.code !== 0) throw new Error(`git rev-parse HEAD failed: ${r.stderr ?? r.stdout}`.trim());
+  if (r.code !== 0) throw new Error(`git rev-parse HEAD failed: ${r.stderr || r.stdout}`.trim());
   return r.stdout.trim();
 }

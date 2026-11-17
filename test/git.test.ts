@@ -112,3 +112,8 @@ test("already-exists error names the directory when only the directory exists", 
   });
   assert.equal(calls.filter((c) => c.args[0] === "worktree").length, 0);
 });
+
+test("errors fall back to stdout when stderr is an empty string", async () => {
+  const { exec } = fake((c) => (c.args[0] === "rev-parse" ? { code: 1, stdout: "from stdout", stderr: "" } : {}));
+  await assert.rejects(headSha(exec, "/wt"), /from stdout/);
+});

@@ -95,3 +95,9 @@ test("target-only agents are not added (the SDK loads them natively) and a missi
   assert.deepEqual(none.overridden, []);
   assert.deepEqual(none.notes, []);
 });
+
+test("maya commits before asking Quinn to review and re-reviews after later changes", () => {
+  const maya = loadVillage("village").maya;
+  assert.match(maya, /commit[^\n]*before[^\n]*quinn|before[^\n]*quinn[^\n]*commit/i);
+  assert.match(maya, /after quinn's approval[^\n]*new review|new review[^\n]*after quinn's approval/i);
+});
