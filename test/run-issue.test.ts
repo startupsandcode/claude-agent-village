@@ -345,3 +345,19 @@ test("R19: HEAD on another branch or detached yields unreviewed with a note; not
     assert.ok(!fx.calls.some((c) => c.args[0] === "push"));
   }
 });
+
+test("every finished event carries logPath, the events.jsonl that holds it", async () => {
+  const cases = [
+    setup().opts, // pr_opened
+    setup({ exec: fakeExec({ body: "## Outcome\nx\n" }).exec }).opts, // not_ready
+    setup({ exec: fakeExec({ branchExists: true }).exec }).opts, // error
+  ];
+  for (const opts of cases) {
+    const events = await collect(opts);
+    const f = last(events);
+    assert.ok(f.logPath, f.verdict);
+    assert.equal(f.logPath, join(opts.runsDir, readdirSync(opts.runsDir)[0]!, "events.jsonl"));
+    assert.ok(existsSync(f.logPath!));
+    assert.deepEqual(logLines(opts.runsDir), events);
+  }
+});

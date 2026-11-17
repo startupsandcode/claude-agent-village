@@ -24,7 +24,7 @@ npm run village -- work 12 --repo <path-to-target-repo>
 | `--max-usd <n>` | 2 | Spend cap in USD |
 | `--no-review` | review required | Skip the Quinn review gate (prints a warning) |
 
-The runner prints one line per event and exits 0 only when a draft PR was opened, otherwise 1. Every event is also appended to `runs/<issue>-<timestamp>/events.jsonl`. The final line names the verdict (`pr_opened`, `not_ready`, `unreviewed`, `capped`, `error`) and the `runs/` directory.
+The runner prints one line per event and exits 0 only when a draft PR was opened, otherwise 1. Every event is also appended to `runs/<issue>-<timestamp>/events.jsonl`. The final line names the verdict (`pr_opened`, `not_ready`, `unreviewed`, `capped`, `error`) and the path of this run's `events.jsonl` (also on the `finished` event as `logPath`).
 
 ## Rerunning an issue
 

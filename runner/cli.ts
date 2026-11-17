@@ -67,8 +67,12 @@ export function formatEvent(e: VillageEvent): string {
     case "cost":
       return `[cost] $${e.usd.toFixed(4)}`;
     case "finished":
-      return `[finished] ${e.verdict}${e.pr ? ` ${e.pr}` : ""} (${e.turns} turns, $${e.costUsd.toFixed(4)})${e.note ? ` - ${e.note}` : ""}`;
+      return `[finished] ${e.verdict}${e.pr ? ` ${e.pr}` : ""} (${e.turns} turns, $${e.costUsd.toFixed(4)})${e.note ? ` - ${e.note}` : ""}${e.worktree ? ` [worktree ${e.worktree}]` : ""}${e.logPath ? ` [log ${e.logPath}]` : ""}`;
   }
+}
+
+export function finalLine(verdict: string, logPath: string | undefined): string {
+  return `verdict: ${verdict}; ${logPath ? `run log: ${logPath}` : "no run log"}`;
 }
 
 async function main(): Promise<number> {
@@ -88,6 +92,7 @@ async function main(): Promise<number> {
   const root = resolve(import.meta.dirname, "..");
   const runsDir = resolve(root, "runs");
   let verdict = "error";
+  let logPath: string | undefined;
   for await (const e of runIssue({
     issue: args.issue,
     repo: resolve(args.repo),
@@ -100,10 +105,12 @@ async function main(): Promise<number> {
     runsDir,
   })) {
     console.log(formatEvent(e));
-    if (e.type === "finished") verdict = e.verdict;
+    if (e.type === "finished") {
+      verdict = e.verdict;
+      logPath = e.logPath;
+    }
   }
-  // runIssue does not expose the per-run log path, so name the runs directory.
-  console.log(`verdict: ${verdict}; run logs under ${runsDir}`);
+  console.log(finalLine(verdict, logPath));
   return verdict === "pr_opened" ? 0 : 1;
 }
 

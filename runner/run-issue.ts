@@ -29,7 +29,9 @@ export async function* runIssue(opts: RunOptions): AsyncGenerator<VillageEvent, 
   const log = createRunLog(join(opts.runsDir, `${opts.issue}-${stamp}`));
   const progress: { costUsd: number; worktree?: string } = { costUsd: 0 };
   const withWorktree = (e: VillageEvent): VillageEvent =>
-    e.type === "finished" && progress.worktree ? { ...e, worktree: progress.worktree } : e;
+    e.type === "finished"
+      ? { ...e, ...(progress.worktree ? { worktree: progress.worktree } : {}), logPath: log.path }
+      : e;
   let finished = false;
   try {
     for await (const raw of core(opts, progress)) {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseArgs } from "../runner/cli.ts";
+import { finalLine, formatEvent, parseArgs } from "../runner/cli.ts";
 
 test("work <n> gives defaults", () => {
   assert.deepEqual(parseArgs(["work", "12"]), {
@@ -25,4 +25,15 @@ test("bad input throws usage", () => {
   assert.throws(() => parseArgs(["work", "1", "--max-usd", "x"]), /Usage/);
   assert.throws(() => parseArgs(["work", "1", "--bogus"]), /Usage/);
   assert.throws(() => parseArgs(["work", "1", "--repo"]), /Usage/);
+});
+
+test("final line prints the verdict and the log path", () => {
+  assert.equal(finalLine("pr_opened", "/r/runs/5-x/events.jsonl"), "verdict: pr_opened; run log: /r/runs/5-x/events.jsonl");
+  assert.equal(finalLine("error", undefined), "verdict: error; no run log");
+});
+
+test("formatEvent finished shows the worktree and log path when present", () => {
+  const line = formatEvent({ type: "finished", verdict: "unreviewed", costUsd: 1, turns: 2, worktree: "/w", logPath: "/l" });
+  assert.match(line, /worktree \/w/);
+  assert.match(line, /log \/l/);
 });
