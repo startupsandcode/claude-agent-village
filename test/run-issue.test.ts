@@ -361,3 +361,24 @@ test("every finished event carries logPath, the events.jsonl that holds it", asy
     assert.deepEqual(logLines(opts.runsDir), events);
   }
 });
+
+test("empty or whitespace outcome yields not_ready naming the outcome, with no worktree", async () => {
+  for (const body of ["## Outcome\n   \n\n## Acceptance criteria\n- [ ] works\n", "## Acceptance criteria\n- [ ] works\n"]) {
+    const fx = fakeExec({ body });
+    const events = await collect(setup({ exec: fx.exec }).opts);
+    assert.equal(events.length, 1);
+    assert.equal(last(events).verdict, "not_ready");
+    assert.match(last(events).note ?? "", /outcome/i);
+    assert.doesNotMatch(last(events).note ?? "", /acceptance criteria/i);
+    assert.ok(!fx.calls.some((c) => c.args[0] === "worktree"));
+  }
+});
+
+test("not_ready note names what is missing: criteria, or both", async () => {
+  const noCrit = last(await collect(setup({ exec: fakeExec({ body: "## Outcome\nDo it.\n" }).exec }).opts));
+  assert.match(noCrit.note ?? "", /acceptance criteria/i);
+  assert.doesNotMatch(noCrit.note ?? "", /outcome/i);
+  const both = last(await collect(setup({ exec: fakeExec({ body: "nothing" }).exec }).opts));
+  assert.match(both.note ?? "", /outcome/i);
+  assert.match(both.note ?? "", /acceptance criteria/i);
+});

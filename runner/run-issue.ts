@@ -59,13 +59,17 @@ async function* core(opts: RunOptions, progress: { costUsd: number; worktree?: s
   const { exec, repo } = opts;
   await assertRepo(exec, repo);
   const issue = await getIssue(exec, repo, opts.issue);
-  if (issue.criteria.length === 0) {
+  const missing = [
+    ...(issue.outcome.trim() === "" ? ["an Outcome section"] : []),
+    ...(issue.criteria.length === 0 ? ["acceptance criteria"] : []),
+  ];
+  if (missing.length > 0) {
     yield {
       type: "finished",
       verdict: "not_ready",
       costUsd: 0,
       turns: 0,
-      note: "issue has no acceptance criteria",
+      note: `issue is missing ${missing.join(" and ")}`,
     };
     return;
   }

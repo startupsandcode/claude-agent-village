@@ -46,7 +46,7 @@ Interactive use inside this repo: run `/work-issue <number>` in Claude Code (`.c
 - The **target** is the repo being changed. The runner creates a worktree and branch there and runs the agents with that worktree as their working directory.
 - Target-agent-wins override: if the target repo has `.claude/agents/<name>.md`, it replaces the village agent of the same name for that run, and the `started` event notes which agents were overridden. The runner reads the target's `.claude/agents/*.md` from the worktree and matches on the frontmatter `name:` (falling back to the filename); for each match it drops the village agent and lets Claude Code load the target's own file, so the target's tools and model apply as written. Files without frontmatter are skipped with a note.
 
-Issues need an "Acceptance criteria" checklist (see `.github/ISSUE_TEMPLATE/work-item.md`); an issue without one finishes as `not_ready`.
+Issues need a non-empty "Outcome" section and an "Acceptance criteria" checklist (see `.github/ISSUE_TEMPLATE/work-item.md`); an issue missing either finishes as `not_ready`, and the note says which.
 
 ## Guardrails
 
