@@ -69,16 +69,18 @@ async function* core(opts: RunOptions, progress: { costUsd: number; worktree?: s
   }
 
   const village = loadVillage(opts.villageDir);
-  const { agents, overridden } = mergeTargetAgents(village.agents, join(repo, ".claude", "agents"));
   const { branch, worktree } = await createWorktree(exec, repo, opts.issue);
   progress.worktree = worktree;
+  // The target's own agents live in the worktree (its checked-out default branch), not the working copy.
+  const { agents, overridden, notes } = mergeTargetAgents(village.agents, join(worktree, ".claude", "agents"));
+  const startNotes = [...(overridden.length ? [`overridden by target repo: ${overridden.join(", ")}`] : []), ...notes];
   yield {
     type: "started",
     issue: opts.issue,
     repo,
     branch,
     worktree,
-    ...(overridden.length ? { note: `overridden by target repo: ${overridden.join(", ")}` } : {}),
+    ...(startNotes.length ? { note: startNotes.join("; ") } : {}),
   };
 
   const pending: VillageEvent[] = [];

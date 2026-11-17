@@ -42,11 +42,44 @@ export function loadVillage(villageDir: string): { maya: string; agents: Record<
   };
 }
 
+// The agent name a target .md file declares: frontmatter `name:` (quotes stripped), else the filename.
+// Returns null when the file has no (terminated) frontmatter, i.e. it is not an agent file.
+function targetAgentName(file: string, text: string): string | null {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  if (lines[0]?.trim() !== "---") return null;
+  const end = lines.indexOf("---", 1);
+  if (end === -1) return null;
+  for (const line of lines.slice(1, end)) {
+    const m = /^name\s*:\s*(.*?)\s*$/.exec(line);
+    if (m) {
+      const name = m[1]!.replace(/^(["'])(.*)\1$/, "$2").trim();
+      if (name) return name;
+    }
+  }
+  return file.replace(/\.md$/i, "");
+}
+
+// Target-agent-wins, without re-parsing the target's files: for every name the target defines that
+// the village also defines, drop the village entry. The SDK then loads the target's own definition
+// natively through settingSources: ["project"]. Files without frontmatter are skipped with a note.
 export function mergeTargetAgents(
   village: Record<string, AgentDefinition>,
   targetAgentsDir: string,
-): { agents: Record<string, AgentDefinition>; overridden: string[] } {
-  const target = readAgentDir(targetAgentsDir);
-  const overridden = Object.keys(target).filter((n) => n in village);
-  return { agents: { ...village, ...target }, overridden };
+): { agents: Record<string, AgentDefinition>; overridden: string[]; notes: string[] } {
+  const agents = { ...village };
+  const overridden: string[] = [];
+  const notes: string[] = [];
+  if (!existsSync(targetAgentsDir)) return { agents, overridden, notes };
+  for (const file of readdirSync(targetAgentsDir).filter((f) => f.endsWith(".md")).sort()) {
+    const name = targetAgentName(file, readFileSync(join(targetAgentsDir, file), "utf8"));
+    if (name === null) {
+      notes.push(`skipped ${file} in target .claude/agents: no frontmatter`);
+      continue;
+    }
+    if (name in agents) {
+      delete agents[name];
+      if (!overridden.includes(name)) overridden.push(name);
+    }
+  }
+  return { agents, overridden, notes };
 }

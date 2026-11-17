@@ -14,7 +14,7 @@ const SHA = "abc1234def5678";
 const GOOD_BODY = "## Outcome\nDo it.\n\n## Acceptance criteria\n- [ ] works\n";
 const villageDir = join(import.meta.dirname, "..", "village");
 
-function fakeExec(o: { repo?: string; body?: string; dirty?: boolean; branchExists?: boolean; sha?: () => string } = {}) {
+function fakeExec(o: { repo?: string; body?: string; dirty?: boolean; branchExists?: boolean; sha?: () => string; worktreeAgents?: Record<string, string | null> } = {}) {
   const calls: Call[] = [];
   const exec: Exec = async (cmd, args, opts) => {
     calls.push({ cmd, args, cwd: opts?.cwd });
@@ -30,7 +30,17 @@ function fakeExec(o: { repo?: string; body?: string; dirty?: boolean; branchExis
     if (key.startsWith("git rev-parse --verify")) return { stdout: "", code: o.branchExists ? 0 : 1 };
     if (key === "git fetch origin") return ok();
     if (key === "git symbolic-ref --short refs/remotes/origin/HEAD") return ok("origin/main\n");
-    if (key.startsWith("git worktree add")) return ok();
+    if (key.startsWith("git worktree add")) {
+      if (o.worktreeAgents) {
+        const dir = join(args[4]!, ".claude", "agents");
+        mkdirSync(dir, { recursive: true });
+        for (const [f, text] of Object.entries(o.worktreeAgents)) {
+          if (text === null) mkdirSync(join(dir, f));
+          else writeFileSync(join(dir, f), text);
+        }
+      }
+      return ok();
+    }
     if (key === "git rev-parse HEAD") return ok(`${o.sha ? o.sha() : SHA}\n`);
     if (key === "git status --porcelain") return ok(o.dirty ? " M file.ts\n" : "");
     if (key === "git rev-parse --abbrev-ref HEAD") return ok("village/issue-5\n");
@@ -212,27 +222,35 @@ test("R8: dirty worktree yields unreviewed with a note and no PR", async () => {
   assert.ok(fx.calls.some((c) => c.cmd === "git" && c.args.join(" ") === "status --porcelain" && c.cwd?.includes("issue-5")));
 });
 
-test("target repo quinn overrides the village quinn and is noted", async () => {
-  const s = setup();
-  mkdirSync(join(s.repo, ".claude", "agents"), { recursive: true });
-  writeFileSync(join(s.repo, ".claude", "agents", "quinn.md"), "---\ndescription: Target quinn\n---\nTARGET QUINN PROMPT\n");
+test("target quinn in the worktree removes the village quinn from agents and is noted", async () => {
+  const fx = fakeExec({
+    worktreeAgents: { "quinn.md": "---\nname: quinn\ndescription: Target quinn\ntools:\n  - Read\n---\nTARGET QUINN PROMPT\n" },
+  });
+  const s = setup({ exec: fx.exec });
   const seen: Seen = {};
   const events = await collect({ ...s.opts, queryFn: fakeQuery({ quinn: true }, seen) });
-  assert.equal(seen.options.agents.quinn.prompt, "TARGET QUINN PROMPT");
+  assert.deepEqual(Object.keys(seen.options.agents).sort(), ["sam", "susie", "theo"]);
+  assert.ok(seen.options.settingSources.includes("project"));
   const started = events[0] as Extract<VillageEvent, { type: "started" }>;
   assert.equal(started.note, "overridden by target repo: quinn");
 });
 
-test("R10: malformed target agent file yields finished error, not a throw", async () => {
-  const fx = fakeExec();
+test("a target agent file without frontmatter is noted and the run continues", async () => {
+  const fx = fakeExec({ worktreeAgents: { "README.md": "no frontmatter here" } });
   const s = setup({ exec: fx.exec });
-  mkdirSync(join(s.repo, ".claude", "agents"), { recursive: true });
-  writeFileSync(join(s.repo, ".claude", "agents", "bad.md"), "no frontmatter here");
+  const events = await collect(s.opts);
+  const started = events[0] as Extract<VillageEvent, { type: "started" }>;
+  assert.match(started.note ?? "", /README\.md/);
+  assert.equal(last(events).verdict, "pr_opened");
+});
+
+test("an unreadable target agent entry yields finished error with worktree set", async () => {
+  const fx = fakeExec({ worktreeAgents: { "broken.md": null } });
+  const s = setup({ exec: fx.exec });
   const events = await collect(s.opts);
   assert.equal(events.length, 1);
   assert.equal(last(events).verdict, "error");
-  assert.match(last(events).note ?? "", /frontmatter/);
-  assert.ok(!fx.calls.some((c) => c.args[0] === "worktree"));
+  assert.ok(last(events).worktree, "worktree reported");
   assert.deepEqual(logLines(s.runsDir), events);
 });
 
