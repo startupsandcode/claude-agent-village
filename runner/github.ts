@@ -44,12 +44,10 @@ export async function openDraftPr(
   worktree: string,
   issue: Issue,
   body: string,
+  branch: string,
 ): Promise<string> {
-  const br = await exec("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: worktree });
-  if (br.code !== 0) throw new Error(`git rev-parse failed: ${br.stderr ?? br.stdout}`.trim());
-  const branch = br.stdout.trim();
   const push = await exec("git", ["push", "-u", "origin", branch], { cwd: worktree });
-  if (push.code !== 0) throw new Error(`git push failed: ${push.stderr ?? push.stdout}`.trim());
+  if (push.code !== 0) throw new Error(`git push failed: ${push.stderr || push.stdout}`.trim());
   const create = await exec(
     "gh",
     [
@@ -60,7 +58,7 @@ export async function openDraftPr(
     { cwd: worktree },
   );
   if (create.code !== 0) {
-    throw new Error(`gh pr create failed: ${create.stderr ?? create.stdout}`.trim());
+    throw new Error(`gh pr create failed: ${create.stderr || create.stdout}`.trim());
   }
   return create.stdout.trim();
 }

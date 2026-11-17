@@ -29,6 +29,11 @@ test("assertRepo throws 'no remote'", async () => {
   await assert.rejects(assertRepo(exec, "/r"), /no remote/);
 });
 
+test("assertRepo requires a remote named origin", async () => {
+  const { exec } = fake((c) => (c.args[0] === "remote" ? { stdout: "upstream\nfork\n" } : { stdout: "true\n" }));
+  await assert.rejects(assertRepo(exec, "/r"), /origin/);
+});
+
 test("assertRepo passes with repo and remote", async () => {
   const { exec } = fake((c) => (c.args[0] === "remote" ? { stdout: "origin\n" } : { stdout: "true\n" }));
   await assertRepo(exec, "/r");

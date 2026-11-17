@@ -14,7 +14,7 @@ const SHA = "abc1234def5678";
 const GOOD_BODY = "## Outcome\nDo it.\n\n## Acceptance criteria\n- [ ] works\n";
 const villageDir = join(import.meta.dirname, "..", "village");
 
-function fakeExec(o: { repo?: string; body?: string; dirty?: boolean; branchExists?: boolean; sha?: () => string; worktreeAgents?: Record<string, string | null> } = {}) {
+function fakeExec(o: { repo?: string; body?: string; dirty?: boolean; branchExists?: boolean; sha?: () => string; worktreeAgents?: Record<string, string | null>; head?: string } = {}) {
   const calls: Call[] = [];
   const exec: Exec = async (cmd, args, opts) => {
     calls.push({ cmd, args, cwd: opts?.cwd });
@@ -43,7 +43,7 @@ function fakeExec(o: { repo?: string; body?: string; dirty?: boolean; branchExis
     }
     if (key === "git rev-parse HEAD") return ok(`${o.sha ? o.sha() : SHA}\n`);
     if (key === "git status --porcelain") return ok(o.dirty ? " M file.ts\n" : "");
-    if (key === "git rev-parse --abbrev-ref HEAD") return ok("village/issue-5\n");
+    if (key === "git rev-parse --abbrev-ref HEAD") return ok(`${o.head ?? "village/issue-5"}\n`);
     if (key.startsWith("git push")) return ok();
     if (key.startsWith("gh pr create")) return ok("https://github.com/o/r/pull/9\n");
     return { stdout: "", code: 1, stderr: `unexpected: ${key}` };
@@ -325,4 +325,23 @@ test("finished has no worktree when none was created", async () => {
   const exists = await collect(setup({ exec: fakeExec({ branchExists: true }).exec }).opts);
   assert.equal(last(exists).worktree, undefined);
   assert.match(last(exists).note ?? "", /git worktree remove --force/);
+});
+
+test("R19: PR is pushed by explicit branch name", async () => {
+  const s = setup();
+  await collect(s.opts);
+  const push = s.calls.find((c) => c.cmd === "git" && c.args[0] === "push")!;
+  assert.deepEqual(push.args, ["push", "-u", "origin", "village/issue-5"]);
+});
+
+test("R19: HEAD on another branch or detached yields unreviewed with a note; nothing pushed", async () => {
+  for (const head of ["main", "HEAD"]) {
+    const fx = fakeExec({ head });
+    const events = await collect(setup({ exec: fx.exec }).opts);
+    const f = last(events);
+    assert.equal(f.verdict, "unreviewed", head);
+    assert.match(f.note ?? "", /village\/issue-5/);
+    assert.equal(prCreates(fx.calls).length, 0);
+    assert.ok(!fx.calls.some((c) => c.args[0] === "push"));
+  }
 });

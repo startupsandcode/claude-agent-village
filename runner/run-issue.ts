@@ -133,9 +133,17 @@ async function* core(opts: RunOptions, progress: { costUsd: number; worktree?: s
     }
 
     const status = await exec("git", ["status", "--porcelain"], { cwd: worktree });
-    if (status.code !== 0) throw new Error(`git status failed: ${status.stderr ?? status.stdout}`.trim());
+    if (status.code !== 0) throw new Error(`git status failed: ${status.stderr || status.stdout}`.trim());
     if (status.stdout.trim() !== "") {
       yield { type: "finished", verdict: "unreviewed", ...base, note: "worktree has uncommitted changes; no PR opened" };
+      return;
+    }
+
+    const onBranch = await exec("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: worktree });
+    if (onBranch.code !== 0) throw new Error(`git rev-parse failed: ${onBranch.stderr || onBranch.stdout}`.trim());
+    const current = onBranch.stdout.trim();
+    if (current !== branch) {
+      yield { type: "finished", verdict: "unreviewed", ...base, note: `worktree HEAD is ${current === "HEAD" ? "detached" : `on ${current}`}, not ${branch}; no PR opened` };
       return;
     }
 
@@ -150,7 +158,7 @@ async function* core(opts: RunOptions, progress: { costUsd: number; worktree?: s
     const verified = opts.requireReview
       ? `Verified: tests run, Quinn approved ${sha.slice(0, 7)}`
       : "Verified: review not required for this run";
-    const url = await openDraftPr(exec, worktree, issue, `${msg.result}\n\n${verified}`);
+    const url = await openDraftPr(exec, worktree, issue, `${msg.result}\n\n${verified}`, branch);
     yield { type: "finished", verdict: "pr_opened", pr: url, ...base };
     return;
   }

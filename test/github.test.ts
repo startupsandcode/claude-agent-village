@@ -58,19 +58,16 @@ test("getIssue throws with stderr on failure", async () => {
 
 const issue = parseIssue(12, "Add login", body);
 
-test("openDraftPr pushes then creates a draft PR", async () => {
-  const { exec, calls } = fake((c) => {
-    if (c.args[0] === "rev-parse") return { stdout: "village/issue-12\n" };
-    if (c.cmd === "gh") return { stdout: "https://github.com/o/r/pull/3\n" };
-    return {};
-  });
-  const url = await openDraftPr(exec, "/wt", issue, "Summary");
+test("openDraftPr pushes the explicit branch, then creates a draft PR", async () => {
+  const { exec, calls } = fake((c) => (c.cmd === "gh" ? { stdout: "https://github.com/o/r/pull/3\n" } : {}));
+  const url = await openDraftPr(exec, "/wt", issue, "Summary", "village/issue-12");
   assert.equal(url, "https://github.com/o/r/pull/3");
   const pushIdx = calls.findIndex((c) => c.cmd === "git" && c.args[0] === "push");
   const createIdx = calls.findIndex((c) => c.cmd === "gh");
   assert.ok(pushIdx >= 0 && createIdx > pushIdx);
   assert.deepEqual(calls[pushIdx].args, ["push", "-u", "origin", "village/issue-12"]);
   assert.equal(calls[pushIdx].cwd, "/wt");
+  assert.ok(!calls.some((c) => c.args[0] === "rev-parse"), "branch is a parameter, not re-derived from HEAD");
   const a = calls[createIdx].args;
   assert.ok(a.includes("--draft"));
   assert.match(a[a.indexOf("--title") + 1], /12/);
@@ -79,11 +76,7 @@ test("openDraftPr pushes then creates a draft PR", async () => {
 });
 
 test("openDraftPr throws on push failure and creates no PR", async () => {
-  const { exec, calls } = fake((c) => {
-    if (c.args[0] === "rev-parse") return { stdout: "village/issue-12\n" };
-    if (c.args[0] === "push") return { code: 1, stderr: "permission denied" };
-    return {};
-  });
-  await assert.rejects(openDraftPr(exec, "/wt", issue, "b"), /permission denied/);
+  const { exec, calls } = fake((c) => (c.args[0] === "push" ? { code: 1, stderr: "permission denied" } : {}));
+  await assert.rejects(openDraftPr(exec, "/wt", issue, "b", "village/issue-12"), /permission denied/);
   assert.equal(calls.filter((c) => c.cmd === "gh").length, 0);
 });

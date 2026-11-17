@@ -32,8 +32,9 @@ export async function assertRepo(exec: Exec, repo: string): Promise<void> {
   const inside = await exec("git", ["rev-parse", "--is-inside-work-tree"], { cwd: repo });
   if (inside.code !== 0) throw new Error(`${repo} is not a git repository`);
   const remotes = await exec("git", ["remote"], { cwd: repo });
-  if (remotes.code !== 0 || remotes.stdout.trim() === "") {
-    throw new Error(`${repo} has no remote`);
+  const names = remotes.stdout.split(/\s+/).filter(Boolean);
+  if (remotes.code !== 0 || !names.includes("origin")) {
+    throw new Error(`${repo} has no remote named origin`);
   }
 }
 
