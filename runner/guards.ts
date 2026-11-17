@@ -214,9 +214,26 @@ export function checkBash(command: string, depth = 0): CheckResult {
 }
 
 // Recognises a test run. Unanchored (use `testRan` below for the per-segment, anchored check).
-export const TEST_COMMAND =
-  /\b(?:(?:npm|pnpm|yarn)(?:\s+run)?\s+test|pytest|go\s+test|cargo\s+test|node\s+--test)\b/i;
-const TEST_AT_START = new RegExp(`^\\s*(?:${TEST_COMMAND.source})`, "i");
+export const TEST_COMMAND = new RegExp(
+  "\\b(?:" +
+    [
+      "(?:npm|pnpm|yarn)(?:\\s+run)?\\s+test",
+      "(?:(?:uv|poetry)\\s+run\\s+)?(?:python3?\\s+-m\\s+)?pytest",
+      "(?:npx|bunx|pnpm\\s+exec)\\s+(?:jest|vitest|mocha)",
+      "jest|vitest|mocha",
+      "go\\s+test|cargo\\s+test|node\\s+--test|dotnet\\s+test|mvn\\s+test|make\\s+test|bun\\s+test|deno\\s+test",
+      "gradlew?\\s+test",
+      "(?:bundle\\s+exec\\s+)?rspec",
+      "(?:vendor/bin/)?phpunit",
+    ].join("|") +
+    ")\\b",
+  "i",
+);
+// Shown in the Stop-gate message so the agent knows what the runner will accept.
+export const TEST_COMMAND_FORMS =
+  "npm/pnpm/yarn [run] test, pytest, python -m pytest, uv/poetry run pytest, npx/pnpm exec/bunx jest|vitest|mocha, " +
+  "go test, cargo test, node --test, dotnet test, mvn test, gradle(w) test, make test, bun test, deno test, rspec, phpunit";
+const TEST_AT_START = new RegExp(`^\\s*(?:\\./)?(?:${TEST_COMMAND.source})`, "i");
 
 // True when some segment STARTS with a test command, so `echo npm test` does not count.
 function testRan(command: string): boolean {
@@ -342,7 +359,9 @@ export function createHooks(deps: {
     if (input.hook_event_name !== "Stop") return {};
     if (!requireReview || input.stop_hook_active) return {};
     const missing: string[] = [];
-    if (!state.ranTests) missing.push("the tests have not been run (run the project's test command)");
+    if (!state.ranTests) {
+      missing.push(`the tests have not been run (run the project's test command; accepted: ${TEST_COMMAND_FORMS})`);
+    }
     if (state.quinnVerdict !== "APPROVE") {
       missing.push("Quinn has not approved (ask quinn to review and end with VERDICT: APPROVE)");
     } else if (state.quinnReviewedSha === null || state.quinnReviewedSha !== (await getHeadSha())) {

@@ -134,11 +134,37 @@ test("checkBash gives a reason", () => {
   if (!r.allowed) assert.match(r.reason, /merg/i);
 });
 
-test("TEST_COMMAND matches test runners", () => {
-  for (const c of ["npm test", "npm run test", "pnpm test", "yarn test", "yarn run test", "pytest -q", "go test ./...", "cargo test", "node --test"]) {
+const TEST_COMMANDS = [
+  "npm test", "npm run test", "pnpm test", "pnpm run test", "yarn test", "yarn run test",
+  "pytest -q", "python -m pytest", "python3 -m pytest -x", "uv run pytest", "poetry run pytest tests/",
+  "npx jest", "npx vitest run", "npx mocha", "pnpm exec vitest", "pnpm exec jest", "bunx jest", "bunx vitest",
+  "jest", "vitest run", "mocha test/",
+  "go test ./...", "cargo test", "node --test", "dotnet test", "mvn test", "./gradlew test", "gradle test",
+  "make test", "bun test", "deno test", "rspec", "bundle exec rspec", "phpunit", "vendor/bin/phpunit",
+];
+
+for (const c of TEST_COMMANDS) {
+  test(`TEST_COMMAND accepts ${JSON.stringify(c)}, also as a hook-detected test run`, async () => {
     assert.ok(TEST_COMMAND.test(c), c);
+    const { state, run } = setup();
+    await run("PreToolUse", { tool_name: "Bash", tool_input: { command: `cd x && ${c}` } });
+    assert.equal(state.ranTests, true, c);
+  });
+}
+
+test("TEST_COMMAND rejects non-test commands", () => {
+  for (const c of ["npm install", "git status", "echo hello", "npm run build", "make build", "dotnet build", "cargo build"]) {
+    assert.ok(!TEST_COMMAND.test(c), c);
   }
-  for (const c of ["npm install", "git status", "echo hello"]) assert.ok(!TEST_COMMAND.test(c), c);
+});
+
+test("Stop block message lists the accepted test commands", async () => {
+  const { run } = setup();
+  const out = await run("Stop", { stop_hook_active: false });
+  const reason = String(out.reason);
+  for (const form of ["npm/pnpm/yarn", "pytest", "python -m pytest", "go test", "cargo test", "vitest", "dotnet test", "mvn test", "make test"]) {
+    assert.ok(reason.includes(form), form);
+  }
 });
 
 const root = resolve("work", "wt");
