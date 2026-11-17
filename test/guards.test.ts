@@ -67,6 +67,28 @@ const DENIED_BASH = [
   "powershell -enc ZwBoAA==",
   "find . -exec gh pr merge {} +",
   "python -c \"import os; os.system('gh pr merge 5')\"",
+  // R17: any push, PR creation/ready, merge endpoints
+  "git push origin village/issue-5",
+  "git push -u origin village/issue-5",
+  "git push",
+  "git -C /x push origin HEAD",
+  '"C:\\Program Files\\Git\\cmd\\git.exe" push origin village/issue-5',
+  "/usr/bin/git push origin x",
+  'bash -c "git push origin village/issue-5"',
+  'powershell -Command "git push"',
+  "cd x && git push",
+  "gh pr create --title x --body y",
+  'gh pr create --title "Fix merge"',
+  "gh pr -R o/r create",
+  "gh.exe pr create",
+  '"C:\\Program Files\\GitHub CLI\\gh.exe" pr create',
+  'bash -c "gh pr create"',
+  "gh pr ready 5",
+  "gh pr -R o/r ready 5",
+  "gh api repos/o/r/merges -f base=main -f head=x",
+  "gh api -X PUT repos/o/r/pulls/5/merge",
+  "gh api repos/o/r/pulls/5/merge -X PUT",
+  'bash -c "gh api repos/o/r/merges -f base=main"',
 ];
 
 for (const cmd of DENIED_BASH) {
@@ -77,17 +99,13 @@ for (const cmd of DENIED_BASH) {
 
 const ALLOWED_BASH = [
   "gh pr list --state merged",
-  'gh pr create --title "Fix merge"',
   "gh pr -R o/r view 5",
   '"C:\\Program Files\\GitHub CLI\\gh.exe" pr view 5',
-  '"C:\\Program Files\\Git\\cmd\\git.exe" push origin village/issue-5',
   "npm test",
   "git status",
   'git commit -m "merge fix"',
   "git commit -m 'gh pr merge is blocked'",
   "gh pr view 5",
-  "git push origin village/issue-5",
-  "git push -u origin village/issue-5",
   "git clean -fdx",
   "rm -rf node_modules",
   "rm -rf ./build",
@@ -95,8 +113,13 @@ const ALLOWED_BASH = [
   'bash -c "npm test && git status"',
   'powershell -Command "Get-ChildItem"',
   "git merge main",
-  "gh pr create --title x --body y",
-  "gh pr create --body 'do not gh pr merge'",
+  'git commit -m "push fix"',
+  "git commit -m push",
+  "git log --oneline",
+  "gh issue view 5",
+  "gh pr checks 5",
+  "gh api repos/o/r/pulls/5",
+  "gh api repos/o/r/issues",
 ];
 
 for (const cmd of ALLOWED_BASH) {

@@ -127,32 +127,50 @@ function checkSegment(raw: string, depth: number): CheckResult {
 // gh flags that take a separate value; skipped when looking for the subcommand words.
 const GH_VALUE_FLAGS = new Set(["-r", "--repo", "-h", "--hostname"]);
 
-// True when `gh [flags] pr [flags] merge` (flags and their values skipped), whatever the gh path.
-function ghPrMerge(tokens: string[]): boolean {
+// First two non-flag words after each gh / git token, flags (and their values) skipped.
+function subcommands(tokens: string[], tool: RegExp, valueFlags: Set<string>): string[][] {
+  const found: string[][] = [];
   for (let g = 0; g < tokens.length; g++) {
-    if (!/^(?:.*\/)?gh(?:\.exe)?$/.test(tokens[g]!)) continue;
+    if (!tool.test(tokens[g]!)) continue;
     const words: string[] = [];
     for (let i = g + 1; i < tokens.length && words.length < 2; i++) {
       const t = tokens[i]!;
       if (t.startsWith("-")) {
-        if (GH_VALUE_FLAGS.has(t)) i++;
+        if (valueFlags.has(t)) i++;
       } else words.push(t);
     }
-    if (words[0] === "pr" && words[1] === "merge") return true;
+    found.push(words);
   }
-  return false;
+  return found;
+}
+
+const GH_TOOL = /^(?:.*\/)?gh(?:\.exe)?$/;
+const GIT_TOOL = /^(?:.*\/)?git(?:\.exe)?$/;
+const GIT_VALUE_FLAGS = new Set(["-c", "--git-dir", "--work-tree", "--namespace"]);
+
+function ghDenied(tokens: string[]): string | null {
+  for (const [a, b] of subcommands(tokens, GH_TOOL, GH_VALUE_FLAGS)) {
+    if (a === "pr" && b === "merge") return "merging pull requests is not allowed";
+    if (a === "pr" && b === "create") return "opening pull requests is the runner's job; gh pr create is not allowed";
+    if (a === "pr" && b === "ready") return "marking pull requests ready is not allowed";
+  }
+  return null;
 }
 
 function checkRules(s: string): CheckResult {
   const tokens = s.split(" ");
 
-  if (ghPrMerge(tokens) || /\bgh(?:\.exe)?\b.*\bpr\s+merge\b/.test(s)) return deny("merging pull requests is not allowed");
-  if (/\bgh(?:\.exe)?\b.*\bapi\b.*(?:\/merge\b|mergepullrequest|enablepullrequestautomerge)/.test(s)) {
-    return deny("merging pull requests through the API is not allowed");
+  const gh = ghDenied(tokens);
+  if (gh) return deny(gh);
+  if (/\bgh(?:\.exe)?\b.*\bpr\s+merge\b/.test(s)) return deny("merging pull requests is not allowed");
+  if (/\bgh(?:\.exe)?\b.*\bpr\s+(?:create|ready)\b/.test(s)) return deny("gh pr create/ready is not allowed");
+  if (/\bgh(?:\.exe)?\b.*\bapi\b.*(?:\/merges?\b|mergepullrequest|enablepullrequestautomerge)/.test(s)) {
+    return deny("merging through the API is not allowed");
   }
 
-  const push = tokens.findIndex((t) => /^(?:.*[\\/])?git(?:\.exe)?$/.test(t)) >= 0 ? tokens.indexOf("push") : -1;
-  if (push >= 0) {
+  const pushes = subcommands(tokens, GIT_TOOL, GIT_VALUE_FLAGS).some(([a]) => a === "push");
+  if (pushes) {
+    const push = tokens.indexOf("push");
     for (const t of tokens.slice(push + 1)) {
       if (t === "--force" || t === "--force-with-lease" || t.startsWith("--force-with-lease=") || t === "--force-if-includes" || t === "--mirror") {
         return deny("force pushes are not allowed");
@@ -164,6 +182,7 @@ function checkRules(s: string): CheckResult {
         if (ref === "main" || ref === "master") return deny("pushing to main/master is not allowed");
       }
     }
+    return deny("git push is not allowed: the runner pushes the issue branch itself");
   }
 
   if (/\bgit(?:\.exe)?\b.*\breset\b.*--hard\s+(?:origin|upstream)\b/.test(s)) {
