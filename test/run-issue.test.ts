@@ -28,6 +28,8 @@ function fakeExec(o: { repo?: string; body?: string; dirty?: boolean; branchExis
     if (key === "git rev-parse --is-inside-work-tree") return ok("true");
     if (key === "git remote") return ok("origin");
     if (key.startsWith("git rev-parse --verify")) return { stdout: "", code: o.branchExists ? 0 : 1 };
+    if (key === "git fetch origin") return ok();
+    if (key === "git symbolic-ref --short refs/remotes/origin/HEAD") return ok("origin/main\n");
     if (key.startsWith("git worktree add")) return ok();
     if (key === "git rev-parse HEAD") return ok(`${o.sha ? o.sha() : SHA}\n`);
     if (key === "git status --porcelain") return ok(o.dirty ? " M file.ts\n" : "");

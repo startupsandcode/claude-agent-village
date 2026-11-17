@@ -51,7 +51,19 @@ export async function createWorktree(
   if (exists.code === 0 || existsSync(worktree)) {
     throw new Error(`branch ${branch} already exists`);
   }
-  const add = await exec("git", ["worktree", "add", "-b", branch, worktree], { cwd: repo });
+  const fetch = await exec("git", ["fetch", "origin"], { cwd: repo });
+  const head =
+    fetch.code === 0
+      ? await exec("git", ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], { cwd: repo })
+      : fetch;
+  const base = head.stdout.trim();
+  if (fetch.code !== 0 || head.code !== 0 || base === "") {
+    throw new Error(
+      `could not resolve origin's default branch (${(head.stderr || head.stdout || "no output").trim()}). ` +
+        `Run 'git fetch origin' and 'git remote set-head origin -a' in ${repo}, then retry.`,
+    );
+  }
+  const add = await exec("git", ["worktree", "add", "-b", branch, worktree, base], { cwd: repo });
   if (add.code !== 0) {
     throw new Error(`git worktree add failed: ${add.stderr ?? add.stdout}`.trim());
   }

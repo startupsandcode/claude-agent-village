@@ -31,16 +31,38 @@ test("assertRepo passes with repo and remote", async () => {
   await assertRepo(exec, "/r");
 });
 
-test("createWorktree runs git worktree add -b", async () => {
-  const { exec, calls } = fake((c) => (c.args[0] === "rev-parse" ? { code: 1 } : {}));
+const resolveOrigin = (c: Call) =>
+  c.args[0] === "rev-parse" ? { code: 1 } : c.args[0] === "symbolic-ref" ? { stdout: "origin/main\n" } : {};
+
+test("createWorktree fetches, resolves origin's default branch and branches from it", async () => {
+  const { exec, calls } = fake(resolveOrigin);
   const r = await createWorktree(exec, "/work/proj", 12);
   assert.equal(r.branch, "village/issue-12");
   assert.ok(r.worktree.split(String.fromCharCode(92)).join("/").endsWith("/work/.village-worktrees/proj-issue-12"));
-  const add = calls.find((c) => c.args[0] === "worktree");
-  assert.ok(add);
+  const fetchIdx = calls.findIndex((c) => c.args[0] === "fetch");
+  const refIdx = calls.findIndex((c) => c.args[0] === "symbolic-ref");
+  const addIdx = calls.findIndex((c) => c.args[0] === "worktree");
+  assert.ok(fetchIdx >= 0 && refIdx > fetchIdx && addIdx > refIdx);
+  assert.deepEqual(calls[fetchIdx].args, ["fetch", "origin"]);
+  assert.equal(calls[fetchIdx].cwd, "/work/proj");
+  assert.deepEqual(calls[refIdx].args, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
+  const add = calls[addIdx];
   assert.deepEqual(add.args.slice(0, 4), ["worktree", "add", "-b", "village/issue-12"]);
   assert.equal(add.args[4], r.worktree);
+  assert.equal(add.args[5], "origin/main");
   assert.equal(add.cwd, "/work/proj");
+});
+
+test("createWorktree throws a clear error when fetch fails and adds nothing", async () => {
+  const { exec, calls } = fake((c) => (c.args[0] === "fetch" ? { code: 128, stderr: "no network" } : resolveOrigin(c)));
+  await assert.rejects(createWorktree(exec, "/work/proj", 12), /could not resolve origin's default branch.*no network/);
+  assert.equal(calls.filter((c) => c.args[0] === "worktree").length, 0);
+});
+
+test("createWorktree throws a clear error when origin/HEAD cannot be resolved and adds nothing", async () => {
+  const { exec, calls } = fake((c) => (c.args[0] === "symbolic-ref" ? { code: 128, stderr: "ref refs/remotes/origin/HEAD is not a symbolic ref" } : resolveOrigin(c)));
+  await assert.rejects(createWorktree(exec, "/work/proj", 12), /could not resolve origin's default branch/);
+  assert.equal(calls.filter((c) => c.args[0] === "worktree").length, 0);
 });
 
 test("createWorktree throws when branch exists and never adds", async () => {
