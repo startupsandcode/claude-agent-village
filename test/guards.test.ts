@@ -42,6 +42,19 @@ const DENIED_BASH = [
   "echo `gh pr merge 5`",
   "sudo gh pr merge 5",
   "gh api -X PUT repos/o/r/pulls/5/merge",
+  // full paths to gh/git
+  '"C:\\Program Files\\GitHub CLI\\gh.exe" pr merge 5',
+  '& "C:\\Program Files\\GitHub CLI\\gh.exe" pr merge 5',
+  "C:\\tools\\gh.exe pr merge 5",
+  '"C:\\Program Files\\Git\\cmd\\git.exe" push --force origin x',
+  "gh.exe pr merge 5",
+  "GH.EXE PR MERGE 5",
+  "/usr/bin/gh pr merge 5",
+  // flags between gh pr and merge
+  "gh pr -R o/r merge 5",
+  "gh pr --repo o/r merge 5",
+  "gh  pr   -R x merge",
+  "gh --repo o/r pr merge 5",
   // wrappers
   'bash -c "gh pr merge 5"',
   "sh -c 'cd x && gh pr merge 5'",
@@ -63,6 +76,11 @@ for (const cmd of DENIED_BASH) {
 }
 
 const ALLOWED_BASH = [
+  "gh pr list --state merged",
+  'gh pr create --title "Fix merge"',
+  "gh pr -R o/r view 5",
+  '"C:\\Program Files\\GitHub CLI\\gh.exe" pr view 5',
+  '"C:\\Program Files\\Git\\cmd\\git.exe" push origin village/issue-5',
   "npm test",
   "git status",
   'git commit -m "merge fix"',

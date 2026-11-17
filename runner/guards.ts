@@ -79,12 +79,15 @@ function substitutions(command: string): string[] {
 const PROSE_COMMAND = /^\s*(?:\S*[\\/])?(?:git(?:\.exe)?\b.*\b(?:commit|tag|stash)\b|gh(?:\.exe)?\b.*\b(?:pr|issue)\s+(?:create|comment|edit|review|close)\b)/i;
 const PROSE_FLAG_VALUE = /(?:^|\s)(?:-m|--message|--body|-b|--title|-t|--notes)(?:=|\s+)(?:"(?:[^"\\]|\\.)*"|'[^']*')/gi;
 
-function normalize(segment: string): string {
+function normalize(segment: string, winPaths = false): string {
   let s = segment;
   if (PROSE_COMMAND.test(s)) s = s.replace(PROSE_FLAG_VALUE, " ");
   // Drop quote characters, cmd carets and shell backslash-escapes so gh pr "merge" / g''h / m\erge
   // still read as the command. Quoted CONTENT is kept (python -c "os.system('gh pr merge')").
-  s = s.replace(/["'^]/g, "").replace(/\\(?=[a-z])/gi, "");
+  s = s.replace(/["'^]/g, "");
+  // winPaths: backslash is a path separator (C:\tools\gh.exe); otherwise it is a shell escape (m\erge).
+  // checkSegment tests both readings.
+  s = winPaths ? s.replace(/\\/g, "/") : s.replace(/\\(?=[a-z])/gi, "");
   return s.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
@@ -114,10 +117,36 @@ function checkSegment(raw: string, depth: number): CheckResult {
     if (!inner.allowed) return inner;
   }
 
-  const s = normalize(raw);
+  for (const winPaths of [false, true]) {
+    const r = checkRules(normalize(raw, winPaths));
+    if (!r.allowed) return r;
+  }
+  return ALLOW;
+}
+
+// gh flags that take a separate value; skipped when looking for the subcommand words.
+const GH_VALUE_FLAGS = new Set(["-r", "--repo", "-h", "--hostname"]);
+
+// True when `gh [flags] pr [flags] merge` (flags and their values skipped), whatever the gh path.
+function ghPrMerge(tokens: string[]): boolean {
+  for (let g = 0; g < tokens.length; g++) {
+    if (!/^(?:.*\/)?gh(?:\.exe)?$/.test(tokens[g]!)) continue;
+    const words: string[] = [];
+    for (let i = g + 1; i < tokens.length && words.length < 2; i++) {
+      const t = tokens[i]!;
+      if (t.startsWith("-")) {
+        if (GH_VALUE_FLAGS.has(t)) i++;
+      } else words.push(t);
+    }
+    if (words[0] === "pr" && words[1] === "merge") return true;
+  }
+  return false;
+}
+
+function checkRules(s: string): CheckResult {
   const tokens = s.split(" ");
 
-  if (/\bgh(?:\.exe)?\b.*\bpr\s+merge\b/.test(s)) return deny("merging pull requests is not allowed");
+  if (ghPrMerge(tokens) || /\bgh(?:\.exe)?\b.*\bpr\s+merge\b/.test(s)) return deny("merging pull requests is not allowed");
   if (/\bgh(?:\.exe)?\b.*\bapi\b.*(?:\/merge\b|mergepullrequest|enablepullrequestautomerge)/.test(s)) {
     return deny("merging pull requests through the API is not allowed");
   }
