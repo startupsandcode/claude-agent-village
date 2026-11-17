@@ -1,5 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { assertRepo, createWorktree, headSha } from "../runner/git.ts";
 import type { Exec } from "../runner/git.ts";
 
@@ -75,4 +78,32 @@ test("headSha returns trimmed sha in the worktree", async () => {
   const { exec, calls } = fake(() => ({ stdout: "abc123\n" }));
   assert.equal(await headSha(exec, "/wt"), "abc123");
   assert.equal(calls[0].cwd, "/wt");
+});
+
+test("already-exists error names the branch and gives the recovery commands", async () => {
+  const { exec } = fake((c) => (c.args[0] === "rev-parse" ? { code: 0 } : {}));
+  await assert.rejects(createWorktree(exec, "/work/proj", 12), (e: Error) => {
+    assert.match(e.message, /^branch village\/issue-12 already exists/);
+    assert.ok(!/directory/.test(e.message.split(". To rerun")[0]));
+    assert.match(e.message, /git worktree remove --force \S*proj-issue-12/);
+    assert.match(e.message, /git branch -D village\/issue-12/);
+    assert.match(e.message, /in \/work\/proj/);
+    return true;
+  });
+});
+
+test("already-exists error names the directory when only the directory exists", async () => {
+  const root = mkdtempSync(join(tmpdir(), "village-git-"));
+  const repo = join(root, "proj");
+  mkdirSync(repo);
+  const dir = join(root, ".village-worktrees", "proj-issue-12");
+  mkdirSync(dir, { recursive: true });
+  const { exec, calls } = fake((c) => (c.args[0] === "rev-parse" ? { code: 1 } : {}));
+  await assert.rejects(createWorktree(exec, repo, 12), (e: Error) => {
+    assert.ok(e.message.startsWith(`directory ${dir} already exists`), e.message);
+    assert.ok(e.message.includes(`git worktree remove --force ${dir}`));
+    assert.ok(e.message.includes("git branch -D village/issue-12"));
+    return true;
+  });
+  assert.equal(calls.filter((c) => c.args[0] === "worktree").length, 0);
 });

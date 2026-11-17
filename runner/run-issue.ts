@@ -27,10 +27,13 @@ const message = (e: unknown): string => (e instanceof Error ? e.message : String
 export async function* runIssue(opts: RunOptions): AsyncGenerator<VillageEvent, void> {
   const stamp = new Date().toISOString().replace(/:/g, "-");
   const log = createRunLog(join(opts.runsDir, `${opts.issue}-${stamp}`));
-  const progress = { costUsd: 0 };
+  const progress: { costUsd: number; worktree?: string } = { costUsd: 0 };
+  const withWorktree = (e: VillageEvent): VillageEvent =>
+    e.type === "finished" && progress.worktree ? { ...e, worktree: progress.worktree } : e;
   let finished = false;
   try {
-    for await (const e of core(opts, progress)) {
+    for await (const raw of core(opts, progress)) {
+      const e = withWorktree(raw);
       if (e.type === "finished") finished = true;
       log.write(e);
       yield e;
@@ -38,19 +41,19 @@ export async function* runIssue(opts: RunOptions): AsyncGenerator<VillageEvent, 
     if (!finished) throw new Error("run ended without a result");
   } catch (err) {
     if (finished) return;
-    const e: VillageEvent = {
+    const e = withWorktree({
       type: "finished",
       verdict: "error",
       costUsd: progress.costUsd,
       turns: 0,
       note: message(err),
-    };
+    });
     log.write(e);
     yield e;
   }
 }
 
-async function* core(opts: RunOptions, progress: { costUsd: number }): AsyncGenerator<VillageEvent, void> {
+async function* core(opts: RunOptions, progress: { costUsd: number; worktree?: string }): AsyncGenerator<VillageEvent, void> {
   const { exec, repo } = opts;
   await assertRepo(exec, repo);
   const issue = await getIssue(exec, repo, opts.issue);
@@ -68,6 +71,7 @@ async function* core(opts: RunOptions, progress: { costUsd: number }): AsyncGene
   const village = loadVillage(opts.villageDir);
   const { agents, overridden } = mergeTargetAgents(village.agents, join(repo, ".claude", "agents"));
   const { branch, worktree } = await createWorktree(exec, repo, opts.issue);
+  progress.worktree = worktree;
   yield {
     type: "started",
     issue: opts.issue,

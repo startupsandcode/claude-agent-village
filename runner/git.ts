@@ -48,8 +48,17 @@ export async function createWorktree(
   const exists = await exec("git", ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], {
     cwd: repo,
   });
-  if (exists.code === 0 || existsSync(worktree)) {
-    throw new Error(`branch ${branch} already exists`);
+  const dirExists = existsSync(worktree);
+  if (exists.code === 0 || dirExists) {
+    const what = [
+      ...(exists.code === 0 ? [`branch ${branch}`] : []),
+      ...(dirExists ? [`directory ${worktree}`] : []),
+    ].join(" and ");
+    const q = (p: string) => (/\s/.test(p) ? `"${p}"` : p);
+    throw new Error(
+      `${what} already exists. To rerun, clean up in ${repo}: ` +
+        `git worktree remove --force ${q(worktree)} && git branch -D ${branch}`,
+    );
   }
   const fetch = await exec("git", ["fetch", "origin"], { cwd: repo });
   const head =

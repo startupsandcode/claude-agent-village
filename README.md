@@ -26,6 +26,17 @@ npm run village -- work 12 --repo <path-to-target-repo>
 
 The runner prints one line per event and exits 0 only when a draft PR was opened, otherwise 1. Every event is also appended to `runs/<issue>-<timestamp>/events.jsonl`. The final line names the verdict (`pr_opened`, `not_ready`, `unreviewed`, `capped`, `error`) and the `runs/` directory.
 
+## Rerunning an issue
+
+Each run works on branch `village/issue-<n>` in a worktree at `<target-parent>/.village-worktrees/<repo>-issue-<n>`. These are kept after a run (the `finished` event carries the `worktree` path). A second run of the same issue stops with an error naming which one exists (the branch, the directory, or both) and the cleanup commands. Run them in the target repo, then rerun:
+
+```
+git worktree remove --force <path>
+git branch -D village/issue-<n>
+```
+
+There is deliberately no `--reset` flag: deleting a branch and worktree is destructive, so you do it yourself.
+
 Interactive use inside this repo: run `/work-issue <number>` in Claude Code (`.claude/commands/work-issue.md`). It makes Claude act as Maya and delegate to the agents in `village/agents/`.
 
 ## Two repos: the village and the target
@@ -39,7 +50,7 @@ Issues need an "Acceptance criteria" checklist (see `.github/ISSUE_TEMPLATE/work
 ## Guardrails
 
 - Caps: `--max-turns` and `--max-usd` end the run with verdict `capped`.
-- PreToolUse hook: file tools are jailed to the worktree, and merges, force-pushes and destructive commands are blocked (reported as `blocked` events).
+- PreToolUse hook: file tools are jailed to the worktree, and any `git push`, `gh pr create`/`ready`, merges (including merge API endpoints) and destructive commands are blocked (reported as `blocked` events).
 - Quinn review gate: a PR is opened only if a test command ran and Quinn's final `VERDICT: APPROVE` is for the current HEAD commit. Otherwise the verdict is `unreviewed`.
 - Draft PRs only. The runner pushes and opens the PR; the agents are told not to.
 - Clean-worktree check: uncommitted changes at the end mean no PR (`unreviewed`).

@@ -281,3 +281,30 @@ test("permission mode and allowed tools are pinned; gh issue view runs in the re
   const view = fx.calls.find((c) => c.cmd === "gh" && c.args[0] === "issue")!;
   assert.equal(view.cwd, s.repo);
 });
+
+test("finished carries the worktree path once it was created (pr_opened, unreviewed, error)", async () => {
+  const ok = await collect(setup().opts);
+  const started = ok[0] as Extract<VillageEvent, { type: "started" }>;
+  assert.equal(last(ok).verdict, "pr_opened");
+  assert.equal(last(ok).worktree, started.worktree);
+
+  const unrev = await collect(setup({ queryFn: fakeQuery({ quinn: false }) }).opts);
+  assert.equal(last(unrev).verdict, "unreviewed");
+  assert.equal(last(unrev).worktree, (unrev[0] as typeof started).worktree);
+
+  const base = fakeExec();
+  const exec: Exec = async (cmd, args, opts) =>
+    cmd === "gh" && args[0] === "pr" ? { stdout: "", code: 1, stderr: "boom" } : base.exec(cmd, args, opts);
+  const err = await collect(setup({ exec }).opts);
+  assert.equal(last(err).verdict, "error");
+  assert.equal(last(err).worktree, (err[0] as typeof started).worktree);
+});
+
+test("finished has no worktree when none was created", async () => {
+  const nr = await collect(setup({ exec: fakeExec({ body: "## Outcome\nx\n" }).exec }).opts);
+  assert.equal(last(nr).verdict, "not_ready");
+  assert.equal(last(nr).worktree, undefined);
+  const exists = await collect(setup({ exec: fakeExec({ branchExists: true }).exec }).opts);
+  assert.equal(last(exists).worktree, undefined);
+  assert.match(last(exists).note ?? "", /git worktree remove --force/);
+});
