@@ -294,7 +294,7 @@ test("permission mode and allowed tools are pinned; gh issue view runs in the re
   const seen: Seen = {};
   await collect({ ...s.opts, exec: fx.exec, queryFn: fakeQuery({ quinn: true }, seen) });
   assert.equal(seen.options.permissionMode, "acceptEdits");
-  assert.deepEqual(seen.options.allowedTools, ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "Agent"]);
+  assert.deepEqual(seen.options.allowedTools, ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "PowerShell", "Agent"]);
   assert.equal(seen.options.allowDangerouslySkipPermissions, undefined);
   const view = fx.calls.find((c) => c.cmd === "gh" && c.args[0] === "issue")!;
   assert.equal(view.cwd, s.repo);

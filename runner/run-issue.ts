@@ -111,7 +111,7 @@ async function* core(opts: RunOptions, progress: { costUsd: number; worktree?: s
       maxTurns: opts.maxTurns,
       maxBudgetUsd: opts.maxUsd,
       permissionMode: "acceptEdits",
-      allowedTools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "Agent"],
+      allowedTools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "PowerShell", "Agent"],
       hooks,
       persistSession: false,
     },

@@ -6,7 +6,8 @@ Status: the unit tests pass without API calls. A real end-to-end run against a l
 
 ## Setup
 
-- Node 24+ (TypeScript files run directly).
+- Node 24.2+ (TypeScript files run directly).
+- On Windows, Git for Windows (Git Bash) is required: Claude Code uses it for shell commands, and the runner shells out to `git` and `gh`.
 - `npm install`
 - Copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY`.
 - `gh auth login` (the runner uses the `gh` CLI to read issues and open draft PRs).
@@ -56,7 +57,7 @@ Issues need an "Acceptance criteria" checklist (see `.github/ISSUE_TEMPLATE/work
 - Clean-worktree check: uncommitted changes at the end mean no PR (`unreviewed`).
 - Run log under `runs/`.
 
-Permission mode is `acceptEdits` with `allowedTools` of Read, Glob, Grep, Edit, Write, Bash and Agent.
+Permission mode is `acceptEdits` with `allowedTools` of Read, Glob, Grep, Edit, Write, Bash, PowerShell and Agent.
 
 ## Not a security boundary
 
