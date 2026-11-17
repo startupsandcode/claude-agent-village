@@ -14,12 +14,16 @@ const SHA = "abc1234def5678";
 const GOOD_BODY = "## Outcome\nDo it.\n\n## Acceptance criteria\n- [ ] works\n";
 const villageDir = join(import.meta.dirname, "..", "village");
 
-function fakeExec(o: { body?: string; dirty?: boolean; branchExists?: boolean; sha?: () => string } = {}) {
+function fakeExec(o: { repo?: string; body?: string; dirty?: boolean; branchExists?: boolean; sha?: () => string } = {}) {
   const calls: Call[] = [];
   const exec: Exec = async (cmd, args, opts) => {
     calls.push({ cmd, args, cwd: opts?.cwd });
     const key = `${cmd} ${args.join(" ")}`;
     const ok = (stdout = "") => ({ stdout, code: 0 });
+    if (key.startsWith("gh issue view")) {
+      assert.equal(opts?.cwd, o.repo ?? opts?.cwd);
+      assert.ok(!args.includes("--repo"));
+    }
     if (key.startsWith("gh issue view")) return ok(JSON.stringify({ title: "T", body: o.body ?? GOOD_BODY }));
     if (key === "git rev-parse --is-inside-work-tree") return ok("true");
     if (key === "git remote") return ok("origin");
@@ -35,7 +39,7 @@ function fakeExec(o: { body?: string; dirty?: boolean; branchExists?: boolean; s
   return { exec, calls };
 }
 
-type Script = { test?: boolean; quinn?: boolean; subtype?: string };
+type Script = { isError?: boolean; test?: boolean; quinn?: boolean; subtype?: string };
 type Seen = { options?: any; prompt?: string };
 
 // Like the real SDK, the fake runs the hooks it was given.
@@ -70,7 +74,9 @@ function fakeQuery(script: Script, seen: Seen = {}): RunOptions["queryFn"] {
       );
     }
     const subtype = script.subtype ?? "success";
-    yield subtype === "success"
+    yield subtype === "success" && script.isError
+      ? { type: "result", subtype, result: "API Error: 500", total_cost_usd: 0.5, num_turns: 4, is_error: true }
+      : subtype === "success"
       ? { type: "result", subtype, result: "Maya summary", total_cost_usd: 0.5, num_turns: 4, is_error: false }
       : { type: "result", subtype, total_cost_usd: 1.25, num_turns: 7, is_error: true };
   }) as unknown as RunOptions["queryFn"];
@@ -252,4 +258,24 @@ test("run log has one JSON line per yielded event", async () => {
   const s = setup();
   const events = await collect(s.opts);
   assert.deepEqual(logLines(s.runsDir), events);
+});
+
+test("success result with is_error maps to error, even after Quinn approved; no PR", async () => {
+  const s = setup({ queryFn: fakeQuery({ quinn: true, isError: true }) });
+  const events = await collect(s.opts);
+  assert.equal(last(events).verdict, "error");
+  assert.match(last(events).note ?? "", /API Error/);
+  assert.equal(prCreates(s.calls).length, 0);
+});
+
+test("permission mode and allowed tools are pinned; gh issue view runs in the repo", async () => {
+  const s = setup();
+  const fx = fakeExec({ repo: s.repo });
+  const seen: Seen = {};
+  await collect({ ...s.opts, exec: fx.exec, queryFn: fakeQuery({ quinn: true }, seen) });
+  assert.equal(seen.options.permissionMode, "acceptEdits");
+  assert.deepEqual(seen.options.allowedTools, ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "Agent"]);
+  assert.equal(seen.options.allowDangerouslySkipPermissions, undefined);
+  const view = fx.calls.find((c) => c.cmd === "gh" && c.args[0] === "issue")!;
+  assert.equal(view.cwd, s.repo);
 });

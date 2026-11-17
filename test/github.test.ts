@@ -46,7 +46,9 @@ test("getIssue parses gh JSON", async () => {
   assert.equal(i.title, "Login");
   assert.equal(i.criteria.length, 2);
   assert.equal(calls[0].cmd, "gh");
-  assert.ok(calls[0].args.includes("7") && calls[0].args.includes("o/r"));
+  assert.ok(calls[0].args.includes("7"));
+  assert.ok(!calls[0].args.includes("--repo"));
+  assert.equal(calls[0].cwd, "o/r");
 });
 
 test("getIssue throws with stderr on failure", async () => {

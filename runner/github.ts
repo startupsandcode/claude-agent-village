@@ -33,8 +33,8 @@ export function parseIssue(number: number, title: string, body: string): Issue {
 }
 
 export async function getIssue(exec: Exec, repo: string, n: number): Promise<Issue> {
-  const r = await exec("gh", ["issue", "view", String(n), "--repo", repo, "--json", "title,body"]);
-  if (r.code !== 0) throw new Error(`gh issue view failed: ${r.stderr ?? r.stdout}`.trim());
+  const r = await exec("gh", ["issue", "view", String(n), "--json", "title,body"], { cwd: repo });
+  if (r.code !== 0) throw new Error(`gh issue view failed: ${r.stderr || r.stdout}`.trim());
   const data = JSON.parse(r.stdout) as { title: string; body: string };
   return parseIssue(n, data.title, data.body ?? "");
 }

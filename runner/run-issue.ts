@@ -102,6 +102,8 @@ async function* core(opts: RunOptions, progress: { costUsd: number }): AsyncGene
       model: MAYA_MODEL,
       maxTurns: opts.maxTurns,
       maxBudgetUsd: opts.maxUsd,
+      permissionMode: "acceptEdits",
+      allowedTools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "Agent"],
       hooks,
       persistSession: false,
     },
@@ -119,8 +121,8 @@ async function* core(opts: RunOptions, progress: { costUsd: number }): AsyncGene
       yield { type: "finished", verdict: "capped", ...base, note: msg.subtype };
       return;
     }
-    if (msg.subtype !== "success") {
-      yield { type: "finished", verdict: "error", ...base, note: msg.subtype };
+    if (msg.subtype !== "success" || msg.is_error) {
+      yield { type: "finished", verdict: "error", ...base, note: msg.subtype === "success" ? `error result: ${msg.result}` : msg.subtype };
       return;
     }
 
