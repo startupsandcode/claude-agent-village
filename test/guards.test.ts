@@ -158,6 +158,22 @@ test("TEST_COMMAND rejects non-test commands", () => {
   }
 });
 
+test("Stop blocks while a background subagent is running, even when stop_hook_active", async () => {
+  const { run } = setup();
+  const tasks = [{ id: "a1", type: "subagent", status: "running", description: "review", agent_type: "quinn" }];
+  const out = await run("Stop", { stop_hook_active: true, background_tasks: tasks });
+  assert.equal(out.decision, "block");
+  assert.match(String(out.reason), /1 background task\(s\) still running/);
+  const done = await run("Stop", { stop_hook_active: true, background_tasks: [] });
+  assert.deepEqual(done, {});
+});
+
+test("Stop ignores background tasks when review is not required", async () => {
+  const { run } = setup({ requireReview: false });
+  const tasks = [{ id: "a1", type: "subagent", status: "running", description: "x", agent_type: "quinn" }];
+  assert.deepEqual(await run("Stop", { stop_hook_active: false, background_tasks: tasks }), {});
+});
+
 test("Stop block message lists the accepted test commands", async () => {
   const { run } = setup();
   const out = await run("Stop", { stop_hook_active: false });

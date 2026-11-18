@@ -357,7 +357,18 @@ export function createHooks(deps: {
 
   const stop: HookCallback = async (input) => {
     if (input.hook_event_name !== "Stop") return {};
-    if (!requireReview || input.stop_hook_active) return {};
+    if (!requireReview) return {};
+    // A subagent still running means Maya is trying to end the turn while a review is pending. Block even
+    // when stop_hook_active is set: a finished session abandons background work, so the gate would fail
+    // for a reason Maya can fix by waiting. maxTurns and maxUsd bound how long this can go on.
+    const running = (input.background_tasks ?? []).length;
+    if (running > 0) {
+      return {
+        decision: "block",
+        reason: `Not ready to finish: ${running} background task(s) still running. Wait for them to finish and use their results before ending.`,
+      };
+    }
+    if (input.stop_hook_active) return {};
     const missing: string[] = [];
     if (!state.ranTests) {
       missing.push(`the tests have not been run (run the project's test command; accepted: ${TEST_COMMAND_FORMS})`);

@@ -2,7 +2,7 @@
 
 A headless runner that takes a GitHub issue in a target repository, has Maya (engineering lead) and her specialist subagents implement it in an isolated git worktree, and opens a **draft** pull request once Quinn (reviewer) approves. It never merges.
 
-Status: the unit tests pass without API calls. A real end-to-end run against a live repo has not been recorded yet.
+Status: the unit tests pass without API calls. One real end-to-end run has succeeded: issue #1 of a small test repo became a draft PR after Quinn approved it (9 turns, about $0.29).
 
 ## Setup
 
@@ -46,6 +46,8 @@ Interactive use inside this repo: run `/work-issue <number>` in Claude Code (`.c
 - The **target** is the repo being changed. The runner creates a worktree and branch there and runs the agents with that worktree as their working directory.
 - Target-agent-wins override: if the target repo has `.claude/agents/<name>.md`, it replaces the village agent of the same name for that run, and the `started` event notes which agents were overridden. The runner reads the target's `.claude/agents/*.md` from the worktree and matches on the frontmatter `name:` (falling back to the filename); for each match it drops the village agent and lets Claude Code load the target's own file, so the target's tools and model apply as written. Files without frontmatter are skipped with a note.
 
+The target repo does not need a local `origin/HEAD`: the runner reads the remote's default branch from `git ls-remote --symref origin HEAD` when it is missing, and changes none of the target's refs.
+
 Issues need a non-empty "Outcome" section and an "Acceptance criteria" checklist (see `.github/ISSUE_TEMPLATE/work-item.md`); an issue missing either finishes as `not_ready`, and the note says which.
 
 ## Guardrails
@@ -58,6 +60,8 @@ Issues need a non-empty "Outcome" section and an "Acceptance criteria" checklist
 - Run log under `runs/`.
 
 Permission mode is `acceptEdits` with `allowedTools` of Read, Glob, Grep, Edit, Write, Bash, PowerShell and Agent.
+
+Subagents run in the foreground: the runner sets `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` for the session. Without it Claude Code launches Quinn as a background task, Maya ends her turn ("the review is still running"), and the session finishes before Quinn reviews, so the run ends `unreviewed`. As a backstop, the Stop hook also blocks while any background task is still running, even on its second call.
 
 ## Not a security boundary
 

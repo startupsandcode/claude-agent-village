@@ -66,8 +66,15 @@ export async function createWorktree(
     fetch.code === 0
       ? await exec("git", ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], { cwd: repo })
       : fetch;
-  const base = head.stdout.trim();
-  if (fetch.code !== 0 || head.code !== 0 || base === "") {
+  let base = head.code === 0 ? head.stdout.trim() : "";
+  if (fetch.code === 0 && base === "") {
+    // No local origin/HEAD (clones made with `git init` + `remote add` lack it). Ask the remote directly
+    // instead of changing the target repo's refs. Output: "ref: refs/heads/main\tHEAD".
+    const remote = await exec("git", ["ls-remote", "--symref", "origin", "HEAD"], { cwd: repo });
+    const m = remote.code === 0 ? /^ref:\s*refs\/heads\/(\S+)\s+HEAD/m.exec(remote.stdout) : null;
+    if (m) base = `origin/${m[1]}`;
+  }
+  if (base === "") {
     throw new Error(
       `could not resolve origin's default branch (${(head.stderr || head.stdout || "no output").trim()}). ` +
         `Run 'git fetch origin' and 'git remote set-head origin -a' in ${repo}, then retry.`,

@@ -67,6 +67,20 @@ test("createWorktree throws a clear error when fetch fails and adds nothing", as
   assert.equal(calls.filter((c) => c.args[0] === "worktree").length, 0);
 });
 
+test("createWorktree falls back to the remote's HEAD when origin/HEAD is not set locally", async () => {
+  const { exec, calls } = fake((c) =>
+    c.args[0] === "symbolic-ref"
+      ? { code: 128, stderr: "ref refs/remotes/origin/HEAD is not a symbolic ref" }
+      : c.args[0] === "ls-remote"
+        ? { stdout: "ref: refs/heads/main\tHEAD\n607a5e8e23a70c2c4d149527ff567ec0e935c171\tHEAD\n" }
+        : resolveOrigin(c),
+  );
+  await createWorktree(exec, "/work/proj", 12);
+  assert.deepEqual(calls.find((c) => c.args[0] === "ls-remote")!.args, ["ls-remote", "--symref", "origin", "HEAD"]);
+  assert.equal(calls.find((c) => c.args[0] === "worktree")!.args[5], "origin/main");
+  assert.equal(calls.filter((c) => c.args.includes("set-head")).length, 0);
+});
+
 test("createWorktree throws a clear error when origin/HEAD cannot be resolved and adds nothing", async () => {
   const { exec, calls } = fake((c) => (c.args[0] === "symbolic-ref" ? { code: 128, stderr: "ref refs/remotes/origin/HEAD is not a symbolic ref" } : resolveOrigin(c)));
   await assert.rejects(createWorktree(exec, "/work/proj", 12), /could not resolve origin's default branch/);

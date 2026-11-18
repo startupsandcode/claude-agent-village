@@ -296,6 +296,8 @@ test("permission mode and allowed tools are pinned; gh issue view runs in the re
   assert.equal(seen.options.permissionMode, "acceptEdits");
   assert.deepEqual(seen.options.allowedTools, ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "PowerShell", "Agent"]);
   assert.equal(seen.options.allowDangerouslySkipPermissions, undefined);
+  // Subagents must run in the foreground, or Maya ends the session before Quinn reviews.
+  assert.equal(seen.options.env?.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS, "1");
   const view = fx.calls.find((c) => c.cmd === "gh" && c.args[0] === "issue")!;
   assert.equal(view.cwd, s.repo);
 });
