@@ -63,6 +63,10 @@ Permission mode is `acceptEdits` with `allowedTools` of Read, Glob, Grep, Edit, 
 
 Subagents run in the foreground: the runner sets `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` for the session. Without it Claude Code launches Quinn as a background task, Maya ends her turn ("the review is still running"), and the session finishes before Quinn reviews, so the run ends `unreviewed`. As a backstop, the Stop hook also blocks while any background task is still running, even on its second call.
 
+## Only run it on trusted repos and issues
+
+The issue text is part of the agents' prompt and the agents run shell commands, so an issue written by someone you do not trust can steer them. Use this only on repositories and issues you trust, ideally inside a container or VM, with a scoped GitHub token and a spend cap. See [SECURITY.md](SECURITY.md).
+
 ## Not a security boundary
 
 These checks run in-process and are a safety net against mistakes, not a sandbox against a determined or compromised agent. For real isolation, run the runner in a container, VM or other sandbox. Known limits:
@@ -83,3 +87,7 @@ These checks run in-process and are a safety net against mistakes, not a sandbox
 ## Development
 
 `npm test` (no API calls) and `npm run typecheck`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

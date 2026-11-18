@@ -1,6 +1,13 @@
 {
   "name": "claude-agent-village",
   "version": "0.1.0",
+  "description": "Headless runner that turns a GitHub issue into a reviewed draft pull request using the Claude Agent SDK.",
+  "license": "MIT",
+  "author": "John Mann",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/startupsandcode/claude-agent-village.git"
+  },
   "private": true,
   "type": "module",
   "engines": {
