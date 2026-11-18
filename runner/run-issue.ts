@@ -117,6 +117,9 @@ async function* core(opts: RunOptions, progress: { costUsd: number; worktree?: s
       permissionMode: "acceptEdits",
       allowedTools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "PowerShell", "Agent"],
       hooks,
+      // Quinn's review must run to completion inside Maya's turn. By default Claude Code launches subagents
+      // as background tasks and the session ends (abandoning them) once Maya stops.
+      env: { ...process.env, CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1" },
       persistSession: false,
     },
   });
