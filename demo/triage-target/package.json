@@ -1,0 +1,11 @@
+{
+  "name": "village-demo-triage",
+  "version": "0.1.0",
+  "description": "A tiny submission-triage module for demonstrating Claude Agent Village. Fictional rules.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

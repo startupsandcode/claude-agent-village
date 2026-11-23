@@ -4,7 +4,7 @@ import type { VillageEvent } from "./events.ts";
 import { assertRepo, createWorktree, headSha } from "./git.ts";
 import type { Exec } from "./git.ts";
 import { getIssue, openDraftPr } from "./github.ts";
-import { createHooks, createReviewState } from "./guards.ts";
+import { createHooks, createReviewState, testsOk } from "./guards.ts";
 import { loadVillage, mergeTargetAgents } from "./load-village.ts";
 import { createRunLog } from "./runlog.ts";
 
@@ -20,7 +20,16 @@ export type RunOptions = {
   exec: Exec;
   queryFn: typeof query; // injected; real SDK query in production
   runsDir: string;
+  // Optional acceptance check the runner runs itself, in the worktree at the final commit, before any PR.
+  // A human chooses it (e.g. "npm test"); the agents cannot change or skip it.
+  verify?: string;
+  platform?: NodeJS.Platform; // injected for tests; defaults to process.platform
 };
+
+// How the runner runs the --verify command: through the platform shell, since a human wrote it.
+export function shellCommand(command: string, platform: NodeJS.Platform = process.platform): [string, string[]] {
+  return platform === "win32" ? ["cmd.exe", ["/d", "/c", command]] : ["sh", ["-c", command]];
+}
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -28,9 +37,15 @@ export async function* runIssue(opts: RunOptions): AsyncGenerator<VillageEvent, 
   const stamp = new Date().toISOString().replace(/:/g, "-");
   const log = createRunLog(join(opts.runsDir, `${opts.issue}-${stamp}`));
   const progress: { costUsd: number; worktree?: string } = { costUsd: 0 };
+  const startedAt = Date.now();
   const withWorktree = (e: VillageEvent): VillageEvent =>
     e.type === "finished"
-      ? { ...e, ...(progress.worktree ? { worktree: progress.worktree } : {}), logPath: log.path }
+      ? {
+          ...e,
+          ...(progress.worktree ? { worktree: progress.worktree } : {}),
+          logPath: log.path,
+          durationMs: Date.now() - startedAt,
+        }
       : e;
   let finished = false;
   try {
@@ -79,7 +94,11 @@ async function* core(opts: RunOptions, progress: { costUsd: number; worktree?: s
   progress.worktree = worktree;
   // The target's own agents live in the worktree (its checked-out default branch), not the working copy.
   const { agents, overridden, notes } = mergeTargetAgents(village.agents, join(worktree, ".claude", "agents"));
-  const startNotes = [...(overridden.length ? [`overridden by target repo: ${overridden.join(", ")}`] : []), ...notes];
+  const startNotes = [
+    ...(overridden.length ? [`overridden by target repo: ${overridden.join(", ")}`] : []),
+    ...notes,
+    ...(opts.verify ? [`runner check: ${opts.verify}`] : []),
+  ];
   yield {
     type: "started",
     issue: opts.issue,
@@ -159,15 +178,38 @@ async function* core(opts: RunOptions, progress: { costUsd: number; worktree?: s
     const sha = await headSha(exec, worktree);
     const reviewed =
       !opts.requireReview ||
-      (state.ranTests && state.quinnVerdict === "APPROVE" && state.quinnReviewedSha === sha);
+      (testsOk(state) && state.quinnVerdict === "APPROVE" && state.quinnReviewedSha === sha);
     if (!reviewed) {
-      yield { type: "finished", verdict: "unreviewed", ...base, note: "tests or Quinn's approval of the current commit missing" };
+      const note =
+        opts.requireReview && state.ranTests && state.lastTestPassed === false
+          ? "the agents' last test run failed; no PR opened"
+          : "tests or Quinn's approval of the current commit missing";
+      yield { type: "finished", verdict: "unreviewed", ...base, note };
       return;
     }
-    const verified = opts.requireReview
-      ? `Verified: tests run, Quinn approved ${sha.slice(0, 7)}`
-      : "Verified: review not required for this run";
-    const url = await openDraftPr(exec, worktree, issue, `${msg.result}\n\n${verified}`, branch);
+    const lines = [
+      opts.requireReview
+        ? `Verified: tests run, Quinn approved ${sha.slice(0, 7)}`
+        : "Verified: review not required for this run",
+    ];
+    if (opts.verify) {
+      const [file, args] = shellCommand(opts.verify, opts.platform);
+      const t0 = Date.now();
+      const r = await exec(file, args, { cwd: worktree });
+      const ms = Date.now() - t0;
+      yield { type: "verified", command: opts.verify, passed: r.code === 0, code: r.code, ms, sha };
+      if (r.code !== 0) {
+        yield {
+          type: "finished",
+          verdict: "unreviewed",
+          ...base,
+          note: `runner check \`${opts.verify}\` failed (exit ${r.code}) at ${sha.slice(0, 7)}; no PR opened`,
+        };
+        return;
+      }
+      lines.push(`Runner check: \`${opts.verify}\` passed at ${sha.slice(0, 7)} (${(ms / 1000).toFixed(1)}s)`);
+    }
+    const url = await openDraftPr(exec, worktree, issue, `${msg.result}\n\n${lines.join("\n")}`, branch);
     yield { type: "finished", verdict: "pr_opened", pr: url, ...base };
     return;
   }

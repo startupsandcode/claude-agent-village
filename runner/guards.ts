@@ -10,7 +10,7 @@
  * Three things live here:
  *  - checkBash / checkPath: pure checks used by the PreToolUse hook.
  *  - TEST_COMMAND: recognises a test run so the review gate can require one.
- *  - createHooks: the SDK `hooks` option: guards, event emission and the Stop review gate.
+ *  - createHooks: the SDK `hooks` option: guards, test outcomes, event emission and the Stop review gate.
  */
 import { isAbsolute, relative, resolve } from "node:path";
 import type { HookCallback, Options } from "@anthropic-ai/claude-agent-sdk";
@@ -269,12 +269,21 @@ export function checkPath(root: string, requested: string): CheckResult {
 
 export type ReviewState = {
   ranTests: boolean;
+  // Outcome of the most recent test run: null until one finishes (or when the outcome is unknown,
+  // e.g. the command was backgrounded or interrupted), then true/false. Relies on Claude Code
+  // reporting a non-zero exit as a tool failure (PostToolUseFailure).
+  lastTestPassed: boolean | null;
   quinnVerdict: "APPROVE" | "REJECT" | null;
   quinnReviewedSha: string | null;
 };
 
 export function createReviewState(): ReviewState {
-  return { ranTests: false, quinnVerdict: null, quinnReviewedSha: null };
+  return { ranTests: false, lastTestPassed: null, quinnVerdict: null, quinnReviewedSha: null };
+}
+
+// The review gate's test condition: a test ran and the last one did not fail.
+export function testsOk(state: ReviewState): boolean {
+  return state.ranTests && state.lastTestPassed !== false;
 }
 
 const PATH_TOOLS: Record<string, string[]> = {
@@ -335,6 +344,40 @@ export function createHooks(deps: {
     return {};
   };
 
+  // Test outcomes. PostToolUse fires for a command that exited 0; PostToolUseFailure for a non-zero exit.
+  const testCommand = (input: { tool_name: string; tool_input: unknown }): string | null => {
+    if (input.tool_name !== "Bash" && input.tool_name !== "PowerShell") return null;
+    const command = (input.tool_input as { command?: unknown } | undefined)?.command;
+    return typeof command === "string" && testRan(command) ? command : null;
+  };
+
+  const postToolUse: HookCallback = async (input) => {
+    if (input.hook_event_name !== "PostToolUse") return {};
+    const command = testCommand(input);
+    if (command === null) return {};
+    const res = (input.tool_response ?? {}) as { interrupted?: unknown; backgroundTaskId?: unknown };
+    if (res.interrupted === true || res.backgroundTaskId !== undefined) {
+      state.lastTestPassed = null; // outcome unknown
+      return {};
+    }
+    state.lastTestPassed = true;
+    emit({ type: "test_result", agent: input.agent_type ?? "maya", command: command.slice(0, 160), passed: true });
+    return {};
+  };
+
+  const postToolUseFailure: HookCallback = async (input) => {
+    if (input.hook_event_name !== "PostToolUseFailure") return {};
+    const command = testCommand(input);
+    if (command === null) return {};
+    if (input.is_interrupt) {
+      state.lastTestPassed = null;
+      return {};
+    }
+    state.lastTestPassed = false;
+    emit({ type: "test_result", agent: input.agent_type ?? "maya", command: command.slice(0, 160), passed: false });
+    return {};
+  };
+
   const subagentStart: HookCallback = async (input) => {
     if (input.hook_event_name !== "SubagentStart") return {};
     emit({ type: "agent_started", agent: input.agent_type });
@@ -351,6 +394,7 @@ export function createHooks(deps: {
       } catch {
         state.quinnReviewedSha = null;
       }
+      emit({ type: "review", verdict: state.quinnVerdict, sha: state.quinnReviewedSha });
     }
     return {};
   };
@@ -372,6 +416,8 @@ export function createHooks(deps: {
     const missing: string[] = [];
     if (!state.ranTests) {
       missing.push(`the tests have not been run (run the project's test command; accepted: ${TEST_COMMAND_FORMS})`);
+    } else if (state.lastTestPassed === false) {
+      missing.push("the last test run failed (fix the failure and run the tests again)");
     }
     if (state.quinnVerdict !== "APPROVE") {
       missing.push("Quinn has not approved (ask quinn to review and end with VERDICT: APPROVE)");
@@ -384,6 +430,8 @@ export function createHooks(deps: {
 
   return {
     PreToolUse: [{ hooks: [preToolUse] }],
+    PostToolUse: [{ hooks: [postToolUse] }],
+    PostToolUseFailure: [{ hooks: [postToolUseFailure] }],
     SubagentStart: [{ hooks: [subagentStart] }],
     SubagentStop: [{ hooks: [subagentStop] }],
     Stop: [{ hooks: [stop] }],
