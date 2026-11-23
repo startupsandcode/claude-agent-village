@@ -24,8 +24,47 @@ npm run village -- work 12 --repo <path-to-target-repo>
 | `--max-turns <n>` | 40 | Turn cap for the run |
 | `--max-usd <n>` | 2 | Spend cap in USD |
 | `--no-review` | review required | Skip the Quinn review gate (prints a warning) |
+| `--verify <command>` | none | Acceptance check the runner runs itself, in the worktree at the final commit, before any PR (for example `--verify "npm test"`). A failure means no PR (`unreviewed`). |
 
 The runner prints one line per event and exits 0 only when a draft PR was opened, 1 for any other verdict, and exit code 2 for a usage error or a missing `ANTHROPIC_API_KEY` (nothing is run). Every event is also appended to `runs/<issue>-<timestamp>/events.jsonl`. The final line names the verdict (`pr_opened`, `not_ready`, `unreviewed`, `capped`, `error`) and the path of this run's `events.jsonl` (also on the `finished` event as `logPath`).
+
+## Scorecard
+
+```
+npm run village -- report [--runs <dir>]
+```
+
+Reads every `runs/*/events.jsonl` and prints a scorecard: runs, how many stopped at the input gate, draft PRs per attempted run, total and median cost (per run and per PR), median turns and wall time, Quinn reviews and rejections, first-pass approvals, agent test runs and failures, runner checks and failures, and the most common blocked actions. No API calls.
+
+## How a run is evaluated
+
+A draft PR opens only when every check below holds. Each check writes an event to the run log, so the scorecard can count what each one caught.
+
+1. **Input gate:** the issue has an Outcome and acceptance criteria, or the run ends `not_ready` before any model call.
+2. **Agent tests:** a test command ran (`test_result` events) and the most recent run passed. The outcome comes from Claude Code reporting a non-zero exit as a tool failure; an interrupted or backgrounded run counts as unknown, not passed.
+3. **Independent review:** Quinn, a separate subagent with read-only file tools, ends with `VERDICT: APPROVE` for the current HEAD commit (`review` events). Any commit after the approval needs a new review.
+4. **Runner check (optional):** with `--verify`, the runner, not the agents, runs the command you chose at the final commit (`verified` event). The agents cannot see, change or skip it.
+5. **Clean finish:** no uncommitted changes, HEAD on the issue branch.
+6. **A human merges.** The runner only opens drafts.
+
+## Demo target
+
+`demo/` holds a small, dependency-free target repo (fictional insurance submission triage: quote, refer or decline, with a traced reason per rule) and three issues: two real work items and one that is deliberately not ready. To create it next to this checkout, push it to your account and file the issues:
+
+```
+.\demo\setup-target.ps1          # Windows PowerShell
+demo/setup-target.sh              # macOS / Linux / Git Bash
+```
+
+Then:
+
+```
+npm run village -- work 3 --repo ../village-demo-triage                                   # not_ready, no model call
+npm run village -- work 1 --repo ../village-demo-triage --verify "npm test" --max-usd 1  # full run to a draft PR
+npm run village -- report
+```
+
+`demo/issues/live-template.md` is a blank work item for writing a new issue on the spot.
 
 ## Rerunning an issue
 
@@ -54,7 +93,8 @@ Issues need a non-empty "Outcome" section and an "Acceptance criteria" checklist
 
 - Caps: `--max-turns` and `--max-usd` end the run with verdict `capped`.
 - PreToolUse hook: file tools are jailed to the worktree, and any `git push`, `gh pr create`/`ready`, merges (including merge API endpoints) and destructive commands are blocked (reported as `blocked` events).
-- Quinn review gate: a PR is opened only if a test command ran and Quinn's final `VERDICT: APPROVE` is for the current HEAD commit. Otherwise the verdict is `unreviewed`.
+- Quinn review gate: a PR is opened only if a test command ran, the last test run did not fail, and Quinn's final `VERDICT: APPROVE` is for the current HEAD commit. Otherwise the verdict is `unreviewed`.
+- Runner check: with `--verify`, the runner reruns your acceptance command at the final commit before pushing anything.
 - Draft PRs only. The runner pushes and opens the PR; the agents are told not to.
 - Clean-worktree check: uncommitted changes at the end mean no PR (`unreviewed`).
 - Run log under `runs/`.
@@ -76,7 +116,7 @@ These checks run in-process and are a safety net against mistakes, not a sandbox
 - PowerShell escapes and alternative syntaxes are not fully covered.
 - Symlinks are not resolved.
 - Bash and PowerShell writes are not path-jailed (only the file tools are).
-- `ranTests` only records that a test-looking command ran, not that it passed or was meaningful.
+- Test outcomes rely on the shell's exit code as Claude Code reports it. A command that hides its exit code (`npm test | tail`) reads as a pass, and nothing checks that the tests are meaningful. `--verify` runs your own command independently, but it is only as good as that command.
 
 ## Out of scope
 
