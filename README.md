@@ -64,7 +64,27 @@ npm run village -- work 1 --repo ../village-demo-triage --verify "npm test" --ma
 npm run village -- report
 ```
 
+Setup prints the issue numbers it used; they are 1 to 3 on a fresh repo.
+
 `demo/issues/live-template.md` is a blank work item for writing a new issue on the spot.
+
+### Resetting the demo
+
+To start over, remove the local target and run setup again:
+
+```
+demo/cleanup-target.sh --archive-runs     # macOS / Linux / Git Bash
+demo/setup-target.sh --yes
+```
+
+```
+.\demo\cleanup-target.ps1 -ArchiveRuns    # Windows PowerShell
+.\demo\setup-target.ps1 -Yes
+```
+
+Cleanup is local only. It deletes `../village-demo-triage` and its worktrees under `../.village-worktrees/village-demo-triage-issue-*`, and with `--archive-runs` moves `runs/` to `runs-<timestamp>` so the next scorecard starts clean. It lists what it will delete and asks you to type the repo name unless you pass `--yes` (`-Yes`). It never deletes the GitHub repo and refuses to touch this checkout or a folder that isn't the demo target. Both scripts take the repo name as their first argument (`-Name` in PowerShell) if you used another.
+
+When the GitHub repo already exists, setup reuses it instead of creating it: it force-pushes a fresh `main`, closes open PRs from `village/*` branches and deletes those branches, and reuses the three demo issues by title (reopening any that were closed and refreshing their bodies), so the issue numbers stay the same. It asks first unless you pass `--yes` (`-Yes`).
 
 ## Rerunning an issue
 
