@@ -42,7 +42,7 @@ export async function createWorktree(
   exec: Exec,
   repo: string,
   n: number,
-): Promise<{ branch: string; worktree: string }> {
+): Promise<{ branch: string; worktree: string; base: string }> {
   const branch = `village/issue-${n}`;
   const root = resolve(repo);
   const worktree = join(root, "..", ".village-worktrees", `${basename(root)}-issue-${n}`);
@@ -84,7 +84,7 @@ export async function createWorktree(
   if (add.code !== 0) {
     throw new Error(`git worktree add failed: ${add.stderr || add.stdout}`.trim());
   }
-  return { branch, worktree };
+  return { branch, worktree, base };
 }
 
 export async function headSha(exec: Exec, worktree: string): Promise<string> {

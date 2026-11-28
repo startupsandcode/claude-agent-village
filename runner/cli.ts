@@ -88,6 +88,8 @@ export function formatEvent(e: VillageEvent): string {
       return `[tests] ${e.agent}: ${e.passed ? "passed" : "FAILED"} (${e.command})`;
     case "review":
       return `[review] quinn: ${e.verdict ?? "no verdict"}${e.sha ? ` on ${e.sha.slice(0, 7)}` : ""}`;
+    case "design_required":
+      return `[design] susie required: ${e.reason}`;
     case "verified":
       return `[verify] runner check ${e.passed ? "passed" : `FAILED (exit ${e.code})`}: ${e.command} at ${e.sha.slice(0, 7)} in ${(e.ms / 1000).toFixed(1)}s`;
     case "cost":

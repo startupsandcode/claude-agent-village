@@ -10,6 +10,8 @@ export type VillageEvent =
   | { type: "test_result"; agent: string; command: string; passed: boolean }
   // Quinn finished a review. verdict is null when the review ended without a VERDICT line.
   | { type: "review"; verdict: "APPROVE" | "REJECT" | null; sha: string | null }
+  // The run became design work, so Susie must review it before Quinn (see runner/design.ts). Once per run.
+  | { type: "design_required"; reason: string }
   // The runner's own acceptance check (--verify), run after the agents stop, at the final commit.
   | { type: "verified"; command: string; passed: boolean; code: number; ms: number; sha: string }
   | { type: "cost"; usd: number }

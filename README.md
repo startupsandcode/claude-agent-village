@@ -42,10 +42,29 @@ A draft PR opens only when every check below holds. Each check writes an event t
 
 1. **Input gate:** the issue has an Outcome and acceptance criteria, or the run ends `not_ready` before any model call.
 2. **Agent tests:** a test command ran (`test_result` events) and the most recent run passed. The outcome comes from Claude Code reporting a non-zero exit as a tool failure; an interrupted or backgrounded run counts as unknown, not passed.
-3. **Independent review:** Quinn, a separate subagent with read-only file tools, ends with `VERDICT: APPROVE` for the current HEAD commit (`review` events). Any commit after the approval needs a new review.
-4. **Runner check (optional):** with `--verify`, the runner, not the agents, runs the command you chose at the final commit (`verified` event). The agents cannot see, change or skip it.
-5. **Clean finish:** no uncommitted changes, HEAD on the issue branch.
-6. **A human merges.** The runner only opens drafts.
+3. **Designer handoff:** when the run is design work, Susie (product designer) has run before Quinn's review (`design_required` event). See [Designer handoff](#designer-handoff).
+4. **Independent review:** Quinn, a separate subagent with read-only file tools, ends with `VERDICT: APPROVE` for the current HEAD commit (`review` events). Any commit after the approval needs a new review.
+5. **Runner check (optional):** with `--verify`, the runner, not the agents, runs the command you chose at the final commit (`verified` event). The agents cannot see, change or skip it.
+6. **Clean finish:** no uncommitted changes, HEAD on the issue branch.
+7. **A human merges.** The runner only opens drafts.
+
+## Designer handoff
+
+Susie used to run only when Maya read an issue as UI work. That was an instruction in Markdown, so nothing guaranteed it. The runner now decides, and SDK hooks hold the order (`runner/design.ts`).
+
+A run is design work when any of these is true:
+
+- The issue has a `design`, `ui`, `ux` or `ui/ux` label (any case). This is known before any model call, and Maya's prompt says so.
+- An agent writes a UI file through a file tool: `.tsx`, `.jsx`, `.vue`, `.svelte`, `.astro`, `.html`, `.htm`, `.css`, `.scss`, `.sass`, `.less` or `.styl`. Test and story files (`*.test.*`, `*.spec.*`, `*.stories.*`, `__tests__/`) do not count.
+- The branch's committed diff against its base touches a UI file. This is checked when Maya tries to finish and again by the runner before any PR, so it also catches files written from the shell.
+
+Once a run is design work:
+
+- **PreToolUse on the Agent tool** denies handing work to Quinn until Susie has finished (a `blocked` event), and tells Maya to bring Susie in first.
+- **The Stop hook** blocks Maya from finishing until Susie has run.
+- **The runner** opens no PR until Susie has run (verdict `unreviewed`), and the PR body records `Design: susie reviewed (<why>)`. If it cannot read the diff, the run ends `error` rather than opening a PR unchecked.
+
+Runs that touch no UI files and carry no design label behave exactly as before. `--no-review` turns this gate off along with the review gate. Interactive `/work-issue` runs have no runner, so there the order is guidance only.
 
 ## Demo target
 
@@ -113,6 +132,7 @@ Issues need a non-empty "Outcome" section and an "Acceptance criteria" checklist
 
 - Caps: `--max-turns` and `--max-usd` end the run with verdict `capped`.
 - PreToolUse hook: file tools are jailed to the worktree, and any `git push`, `gh pr create`/`ready`, merges (including merge API endpoints) and destructive commands are blocked (reported as `blocked` events).
+- Designer handoff: on design work, Quinn cannot be called and no PR opens until Susie has run (see [Designer handoff](#designer-handoff)).
 - Quinn review gate: a PR is opened only if a test command ran, the last test run did not fail, and Quinn's final `VERDICT: APPROVE` is for the current HEAD commit. Otherwise the verdict is `unreviewed`.
 - Runner check: with `--verify`, the runner reruns your acceptance command at the final commit before pushing anything.
 - Draft PRs only. The runner pushes and opens the PR; the agents are told not to.
@@ -136,6 +156,7 @@ These checks run in-process and are a safety net against mistakes, not a sandbox
 - PowerShell escapes and alternative syntaxes are not fully covered.
 - Symlinks are not resolved.
 - Bash and PowerShell writes are not path-jailed (only the file tools are).
+- The designer handoff only checks that Susie ran, not what she said. UI files are recognised by extension, so UI built in plain `.ts` or `.js` needs a design label.
 - Test outcomes rely on the shell's exit code as Claude Code reports it. A command that hides its exit code (`npm test | tail`) reads as a pass, and nothing checks that the tests are meaningful. `--verify` runs your own command independently, but it is only as good as that command.
 
 ## Out of scope

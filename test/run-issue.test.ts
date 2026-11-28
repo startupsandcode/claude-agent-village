@@ -14,7 +14,7 @@ const SHA = "abc1234def5678";
 const GOOD_BODY = "## Outcome\nDo it.\n\n## Acceptance criteria\n- [ ] works\n";
 const villageDir = join(import.meta.dirname, "..", "village");
 
-function fakeExec(o: { repo?: string; body?: string; dirty?: boolean; branchExists?: boolean; sha?: () => string; worktreeAgents?: Record<string, string | null>; head?: string } = {}) {
+function fakeExec(o: { repo?: string; body?: string; labels?: string[]; changed?: string[]; diffFails?: boolean; dirty?: boolean; branchExists?: boolean; sha?: () => string; worktreeAgents?: Record<string, string | null>; head?: string } = {}) {
   const calls: Call[] = [];
   const exec: Exec = async (cmd, args, opts) => {
     calls.push({ cmd, args, cwd: opts?.cwd });
@@ -24,7 +24,9 @@ function fakeExec(o: { repo?: string; body?: string; dirty?: boolean; branchExis
       assert.equal(opts?.cwd, o.repo ?? opts?.cwd);
       assert.ok(!args.includes("--repo"));
     }
-    if (key.startsWith("gh issue view")) return ok(JSON.stringify({ title: "T", body: o.body ?? GOOD_BODY }));
+    if (key.startsWith("gh issue view")) {
+      return ok(JSON.stringify({ title: "T", body: o.body ?? GOOD_BODY, labels: (o.labels ?? []).map((name) => ({ name })) }));
+    }
     if (key === "git rev-parse --is-inside-work-tree") return ok("true");
     if (key === "git remote") return ok("origin");
     if (key.startsWith("git rev-parse --verify")) return { stdout: "", code: o.branchExists ? 0 : 1 };
@@ -44,6 +46,9 @@ function fakeExec(o: { repo?: string; body?: string; dirty?: boolean; branchExis
     if (key === "git rev-parse HEAD") return ok(`${o.sha ? o.sha() : SHA}\n`);
     if (key === "git status --porcelain") return ok(o.dirty ? " M file.ts\n" : "");
     if (key === "git rev-parse --abbrev-ref HEAD") return ok(`${o.head ?? "village/issue-5"}\n`);
+    if (key === "git diff --name-only origin/main...HEAD") {
+      return o.diffFails ? { stdout: "", code: 128, stderr: "bad revision" } : ok((o.changed ?? ["src/app.ts"]).join("\n"));
+    }
     if (key.startsWith("git push")) return ok();
     if (key.startsWith("gh pr create")) return ok("https://github.com/o/r/pull/9\n");
     return { stdout: "", code: 1, stderr: `unexpected: ${key}` };
@@ -51,10 +56,10 @@ function fakeExec(o: { repo?: string; body?: string; dirty?: boolean; branchExis
   return { exec, calls };
 }
 
-type Script = { isError?: boolean; test?: boolean; quinn?: boolean; subtype?: string };
-type Seen = { options?: any; prompt?: string };
+type Script = { isError?: boolean; test?: boolean; quinn?: boolean; susie?: boolean; quinnFirst?: boolean; subtype?: string };
+type Seen = { options?: any; prompt?: string; quinnDenied?: boolean };
 
-// Like the real SDK, the fake runs the hooks it was given.
+// Like the real SDK, the fake runs every hook it was given for an event, in order.
 function fakeQuery(script: Script, seen: Seen = {}): RunOptions["queryFn"] {
   return (async function* (params: { prompt: string; options: any }) {
     seen.options = params.options;
@@ -62,29 +67,28 @@ function fakeQuery(script: Script, seen: Seen = {}): RunOptions["queryFn"] {
     const hooks = params.options.hooks;
     const signal = new AbortController().signal;
     const base = { session_id: "s", transcript_path: "t", cwd: "c" };
+    const call = async (name: string, input: Record<string, unknown>) => {
+      const outs: any[] = [];
+      for (const m of hooks[name] ?? []) for (const h of m.hooks) outs.push(await h({ ...base, hook_event_name: name, ...input }, "x", { signal }));
+      return outs;
+    };
+    const subagent = async (agent: string, last = "done") => {
+      await call("SubagentStart", { agent_id: agent, agent_type: agent });
+      await call("SubagentStop", {
+        stop_hook_active: false, agent_id: agent, agent_transcript_path: "p", agent_type: agent, last_assistant_message: last,
+      });
+    };
+    const handTo = async (agent: string) => {
+      const outs = await call("PreToolUse", { tool_name: "Agent", tool_input: { subagent_type: agent, description: "d", prompt: "p" }, tool_use_id: agent });
+      return !outs.some((o) => o?.hookSpecificOutput?.permissionDecision === "deny");
+    };
     yield { type: "assistant", message: { content: [] } };
     if (script.test !== false) {
-      await hooks.PreToolUse[0].hooks[0](
-        { ...base, hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "npm test" }, tool_use_id: "1" },
-        "1",
-        { signal },
-      );
+      await call("PreToolUse", { tool_name: "Bash", tool_input: { command: "npm test" }, tool_use_id: "1" });
     }
-    if (script.quinn) {
-      await hooks.SubagentStart[0].hooks[0](
-        { ...base, hook_event_name: "SubagentStart", agent_id: "a", agent_type: "quinn" },
-        "2",
-        { signal },
-      );
-      await hooks.SubagentStop[0].hooks[0](
-        {
-          ...base, hook_event_name: "SubagentStop", stop_hook_active: false, agent_id: "a",
-          agent_transcript_path: "p", agent_type: "quinn", last_assistant_message: "ok\nVERDICT: APPROVE",
-        },
-        "3",
-        { signal },
-      );
-    }
+    if (script.quinnFirst) seen.quinnDenied = !(await handTo("quinn"));
+    if (script.susie && (await handTo("susie"))) await subagent("susie");
+    if (script.quinn && (await handTo("quinn"))) await subagent("quinn", "ok\nVERDICT: APPROVE");
     const subtype = script.subtype ?? "success";
     yield subtype === "success" && script.isError
       ? { type: "result", subtype, result: "API Error: 500", total_cost_usd: 0.5, num_turns: 4, is_error: true }
@@ -383,4 +387,105 @@ test("not_ready note names what is missing: criteria, or both", async () => {
   const both = last(await collect(setup({ exec: fakeExec({ body: "nothing" }).exec }).opts));
   assert.match(both.note ?? "", /outcome/i);
   assert.match(both.note ?? "", /acceptance criteria/i);
+});
+
+// ---- designer handoff (runner/design.ts) ----
+
+const prBody = (calls: Call[]) => {
+  const c = prCreates(calls)[0]!;
+  return c.args[c.args.indexOf("--body") + 1]!;
+};
+
+test("design: a design-labeled issue is design work from the start and the prompt says so", async () => {
+  const fx = fakeExec({ labels: ["bug", "UI"] });
+  const s = setup({ exec: fx.exec });
+  const seen: Seen = {};
+  const events = await collect({ ...s.opts, queryFn: fakeQuery({ quinn: true, susie: true }, seen) });
+  assert.equal(events[0]!.type, "started");
+  assert.deepEqual(events[1], { type: "design_required", reason: 'issue labeled "UI"' });
+  assert.match(seen.prompt!, /This issue is design work \(issue labeled "UI"\)\. Bring in susie for the design before Quinn reviews/);
+  assert.equal(last(events).verdict, "pr_opened");
+  assert.match(prBody(fx.calls), /Design: susie reviewed \(issue labeled "UI"\)/);
+});
+
+test("design: handing to Quinn before Susie is denied, and the run still finishes once Susie runs", async () => {
+  const fx = fakeExec({ labels: ["design"] });
+  const s = setup({ exec: fx.exec });
+  const seen: Seen = {};
+  const events = await collect({ ...s.opts, queryFn: fakeQuery({ quinnFirst: true, susie: true, quinn: true }, seen) });
+  assert.equal(seen.quinnDenied, true);
+  assert.ok(events.some((e) => e.type === "blocked" && e.tool === "Agent" && /quinn before susie/.test(e.reason)));
+  const order = events.filter((e) => e.type === "agent_started").map((e) => (e as { agent: string }).agent);
+  assert.deepEqual(order, ["susie", "quinn"]);
+  assert.equal(last(events).verdict, "pr_opened");
+});
+
+test("design: a labeled issue whose run skips Susie (and so Quinn) opens no PR", async () => {
+  const fx = fakeExec({ labels: ["design"] });
+  const s = setup({ exec: fx.exec });
+  const events = await collect({ ...s.opts, queryFn: fakeQuery({ quinn: true }) });
+  assert.equal(last(events).verdict, "unreviewed");
+  assert.ok(!events.some((e) => e.type === "agent_started" && (e as { agent: string }).agent === "quinn"), "quinn was never let in");
+  assert.equal(prCreates(fx.calls).length, 0);
+});
+
+test("design: a committed UI file the hooks never saw still requires Susie before any PR", async () => {
+  const fx = fakeExec({ changed: ["src/app.ts", "src/components/Header.tsx"] });
+  const s = setup({ exec: fx.exec });
+  const events = await collect(s.opts);
+  const f = last(events);
+  assert.equal(f.verdict, "unreviewed");
+  assert.equal(f.note, "design work (changes UI file src/components/Header.tsx) but susie never reviewed it; no PR opened");
+  assert.ok(events.some((e) => e.type === "design_required"));
+  assert.equal(prCreates(fx.calls).length, 0);
+  assert.ok(!fx.calls.some((c) => c.args[0] === "push"));
+  assert.deepEqual(logLines(s.runsDir), events);
+});
+
+test("design: a committed UI file with Susie's review opens the PR and says so", async () => {
+  const fx = fakeExec({ changed: ["src/styles/site.css"] });
+  const s = setup({ exec: fx.exec, queryFn: fakeQuery({ quinn: true, susie: true }) });
+  const events = await collect(s.opts);
+  assert.equal(last(events).verdict, "pr_opened");
+  assert.match(prBody(fx.calls), /Design: susie reviewed \(changes UI file src\/styles\/site\.css\)/);
+});
+
+test("design: non-UI work is unchanged: no design event, no design line, no Susie needed", async () => {
+  const fx = fakeExec({ changed: ["src/triage.js", "test/triage.test.js", "src/Button.test.tsx"] });
+  const s = setup({ exec: fx.exec });
+  const seen: Seen = {};
+  const events = await collect({ ...s.opts, queryFn: fakeQuery({ quinn: true }, seen) });
+  assert.equal(last(events).verdict, "pr_opened");
+  assert.ok(!events.some((e) => e.type === "design_required"));
+  assert.doesNotMatch(prBody(fx.calls), /Design:/);
+  assert.doesNotMatch(seen.prompt!, /design work/);
+});
+
+test("design: the diff is taken against the base branch the worktree came from", async () => {
+  const fx = fakeExec();
+  const s = setup({ exec: fx.exec });
+  await collect(s.opts);
+  const diff = fx.calls.find((c) => c.cmd === "git" && c.args[0] === "diff")!;
+  assert.deepEqual(diff.args, ["diff", "--name-only", "origin/main...HEAD"]);
+  assert.ok(diff.cwd?.includes(".village-worktrees"), "runs in the worktree");
+});
+
+test("design: a failing git diff fails closed (error, nothing pushed)", async () => {
+  const fx = fakeExec({ diffFails: true });
+  const s = setup({ exec: fx.exec });
+  const events = await collect(s.opts);
+  const f = last(events);
+  assert.equal(f.verdict, "error");
+  assert.match(f.note!, /git diff failed: bad revision/);
+  assert.ok(!fx.calls.some((c) => c.args[0] === "push"));
+});
+
+test("design: --no-review skips the design gate like the review gate", async () => {
+  const fx = fakeExec({ labels: ["design"], changed: ["src/App.vue"] });
+  const s = setup({ exec: fx.exec, requireReview: false, queryFn: fakeQuery({}) });
+  const seen: Seen = {};
+  const events = await collect({ ...s.opts, queryFn: fakeQuery({ quinnFirst: true }, seen) });
+  assert.equal(seen.quinnDenied, false);
+  assert.equal(last(events).verdict, "pr_opened");
+  assert.doesNotMatch(prBody(fx.calls), /Design:/);
 });
