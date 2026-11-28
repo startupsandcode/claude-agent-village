@@ -80,3 +80,18 @@ test("openDraftPr throws on push failure and creates no PR", async () => {
   await assert.rejects(openDraftPr(exec, "/wt", issue, "b", "village/issue-12"), /permission denied/);
   assert.equal(calls.filter((c) => c.cmd === "gh").length, 0);
 });
+
+test("getIssue asks gh for labels and returns their names", async () => {
+  const { exec, calls } = fake(() => ({
+    stdout: JSON.stringify({ title: "T", body, labels: [{ name: "design", color: "fff" }, { name: "bug" }, {}] }),
+  }));
+  const i = await getIssue(exec, "/work/proj", 4);
+  assert.deepEqual(calls[0]!.args, ["issue", "view", "4", "--json", "title,body,labels"]);
+  assert.deepEqual(i.labels, ["design", "bug"]);
+});
+
+test("getIssue treats a missing labels field as no labels", async () => {
+  const { exec } = fake(() => ({ stdout: JSON.stringify({ title: "T", body }) }));
+  assert.deepEqual((await getIssue(exec, "/work/proj", 4)).labels, []);
+  assert.deepEqual(parseIssue(1, "T", body).labels, []);
+});

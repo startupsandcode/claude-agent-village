@@ -10,6 +10,7 @@ export type Issue = {
   body: string;
   outcome: string;
   criteria: string[];
+  labels: string[];
 };
 
 function section(body: string, heading: string): string[] {
@@ -24,19 +25,20 @@ function section(body: string, heading: string): string[] {
   return out;
 }
 
-export function parseIssue(number: number, title: string, body: string): Issue {
+export function parseIssue(number: number, title: string, body: string, labels: string[] = []): Issue {
   const outcome = section(body, "Outcome").join("\n").trim();
   const criteria = section(body, "Acceptance criteria")
     .map((l) => /^\s*- \[[ xX]\]\s+(.*\S)\s*$/.exec(l)?.[1])
     .filter((c): c is string => Boolean(c));
-  return { number, title, body, outcome, criteria };
+  return { number, title, body, outcome, criteria, labels };
 }
 
 export async function getIssue(exec: Exec, repo: string, n: number): Promise<Issue> {
-  const r = await exec("gh", ["issue", "view", String(n), "--json", "title,body"], { cwd: repo });
+  const r = await exec("gh", ["issue", "view", String(n), "--json", "title,body,labels"], { cwd: repo });
   if (r.code !== 0) throw new Error(`gh issue view failed: ${r.stderr || r.stdout}`.trim());
-  const data = JSON.parse(r.stdout) as { title: string; body: string };
-  return parseIssue(n, data.title, data.body ?? "");
+  const data = JSON.parse(r.stdout) as { title: string; body: string; labels?: { name?: unknown }[] };
+  const labels = (data.labels ?? []).map((l) => l?.name).filter((l): l is string => typeof l === "string");
+  return parseIssue(n, data.title, data.body ?? "", labels);
 }
 
 export async function openDraftPr(

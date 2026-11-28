@@ -14,4 +14,5 @@ Use GitHub Issues as the durable queue. Coordinate specialists only when their d
 - Keep code changes on a feature branch. Never merge.
 - Do not push or open a pull request yourself; the runner does that after Quinn approves.
 - Quinn ends every review with exactly `VERDICT: APPROVE` or `VERDICT: REJECT`.
+- Design work goes to Susie before Quinn reviews it. In headless runs the runner decides what is design work (the issue has a `design`, `ui`, `ux` or `ui/ux` label, or the change touches UI files such as `.tsx`, `.vue`, `.html` or `.css`) and enforces the order: Quinn cannot be called, and no PR opens, until Susie has run.
 - Commit the completed changes (yours or Sam's) before asking Quinn to review: Quinn reviews the committed HEAD, so uncommitted work is not reviewed. Any change after Quinn's approval requires a new review of the new commit.

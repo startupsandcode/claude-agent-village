@@ -59,6 +59,7 @@ test("createWorktree fetches, resolves origin's default branch and branches from
   assert.equal(add.args[4], r.worktree);
   assert.equal(add.args[5], "origin/main");
   assert.equal(add.cwd, "/work/proj");
+  assert.equal(r.base, "origin/main", "the base is returned so the runner can diff the branch against it");
 });
 
 test("createWorktree throws a clear error when fetch fails and adds nothing", async () => {

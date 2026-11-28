@@ -123,6 +123,7 @@ function fakeExec(verifyCode = 0) {
     if (key === "git rev-parse HEAD") return ok(`${SHA}\n`);
     if (key === "git status --porcelain") return ok("");
     if (key === "git rev-parse --abbrev-ref HEAD") return ok("village/issue-5\n");
+    if (key === "git diff --name-only origin/main...HEAD") return ok("src/triage.js\n");
     if (key.startsWith("git push")) return ok();
     if (key.startsWith("gh pr create")) return ok("https://github.com/o/r/pull/9\n");
     if (cmd === "sh" && args[0] === "-c") return { stdout: "", code: verifyCode, stderr: verifyCode ? "1 failing" : "" };

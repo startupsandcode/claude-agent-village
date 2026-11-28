@@ -37,3 +37,10 @@ test("formatEvent finished shows the worktree and log path when present", () => 
   assert.match(line, /worktree \/w/);
   assert.match(line, /log \/l/);
 });
+
+test("formatEvent shows why a run became design work", () => {
+  assert.equal(
+    formatEvent({ type: "design_required", reason: "changes UI file src/Nav.tsx" }),
+    "[design] susie required: changes UI file src/Nav.tsx",
+  );
+});

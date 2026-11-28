@@ -1,6 +1,15 @@
 import { join } from "node:path";
 import type { query } from "@anthropic-ai/claude-agent-sdk";
 import type { VillageEvent } from "./events.ts";
+import {
+  changedFiles,
+  createDesignHooks,
+  createDesignState,
+  DESIGNER,
+  designPending,
+  mergeHooks,
+  noteChangedFiles,
+} from "./design.ts";
 import { assertRepo, createWorktree, headSha } from "./git.ts";
 import type { Exec } from "./git.ts";
 import { getIssue, openDraftPr } from "./github.ts";
@@ -90,7 +99,7 @@ async function* core(opts: RunOptions, progress: { costUsd: number; worktree?: s
   }
 
   const village = loadVillage(opts.villageDir);
-  const { branch, worktree } = await createWorktree(exec, repo, opts.issue);
+  const { branch, worktree, base: baseRef } = await createWorktree(exec, repo, opts.issue);
   progress.worktree = worktree;
   // The target's own agents live in the worktree (its checked-out default branch), not the working copy.
   const { agents, overridden, notes } = mergeTargetAgents(village.agents, join(worktree, ".claude", "agents"));
@@ -108,20 +117,39 @@ async function* core(opts: RunOptions, progress: { costUsd: number; worktree?: s
     ...(startNotes.length ? { note: startNotes.join("; ") } : {}),
   };
 
+  // Design work is decided by the runner, not by Maya's reading of the issue (see design.ts).
+  const design = createDesignState(issue.labels);
+  if (design.required) yield { type: "design_required", reason: design.required };
+
   const pending: VillageEvent[] = [];
+  const emit = (e: VillageEvent) => pending.push(e);
   const state = createReviewState();
-  const hooks = createHooks({
-    worktree,
-    state,
-    getHeadSha: () => headSha(exec, worktree),
-    emit: (e) => pending.push(e),
-    requireReview: opts.requireReview,
-  });
+  const hooks = mergeHooks(
+    createHooks({
+      worktree,
+      state,
+      getHeadSha: () => headSha(exec, worktree),
+      emit,
+      requireReview: opts.requireReview,
+    }),
+    createDesignHooks({
+      worktree,
+      state: design,
+      emit,
+      requireReview: opts.requireReview,
+      getChangedFiles: () => changedFiles(exec, worktree, baseRef),
+    }),
+  );
   const drain = () => pending.splice(0, pending.length);
 
+  const designNote =
+    design.required && opts.requireReview
+      ? `\n\nThis issue is design work (${design.required}). Bring in ${DESIGNER} for the design before Quinn reviews: the runner will not let Quinn review, or open a PR, until ${DESIGNER} has run.`
+      : "";
   const prompt =
     `Work GitHub issue #${issue.number} in this repository: ${issue.title}\n\n${issue.body}\n\n` +
-    "Commit your work on the current branch. Do not push, open a pull request, or merge: the runner does that after Quinn approves.";
+    "Commit your work on the current branch. Do not push, open a pull request, or merge: the runner does that after Quinn approves." +
+    designNote;
 
   const stream = opts.queryFn({
     prompt,
@@ -187,10 +215,25 @@ async function* core(opts: RunOptions, progress: { costUsd: number; worktree?: s
       yield { type: "finished", verdict: "unreviewed", ...base, note };
       return;
     }
+    if (opts.requireReview) {
+      // The runner's own design check, on the committed diff: it also sees UI files written from the shell.
+      noteChangedFiles(design, await changedFiles(exec, worktree, baseRef), emit);
+      yield* drain();
+      if (designPending(design)) {
+        yield {
+          type: "finished",
+          verdict: "unreviewed",
+          ...base,
+          note: `design work (${design.required}) but ${DESIGNER} never reviewed it; no PR opened`,
+        };
+        return;
+      }
+    }
     const lines = [
       opts.requireReview
         ? `Verified: tests run, Quinn approved ${sha.slice(0, 7)}`
         : "Verified: review not required for this run",
+      ...(opts.requireReview && design.required ? [`Design: ${DESIGNER} reviewed (${design.required})`] : []),
     ];
     if (opts.verify) {
       const [file, args] = shellCommand(opts.verify, opts.platform);
